@@ -137,63 +137,22 @@ func (r *agentStoreRouter) EventCursorSet(sub string, seq int64) error {
 
 // --- session-scoped: route through the session index ---
 
+// Workflows are registry-scoped: their writes journal state events, and the
+// journal is registry-global.
 func (r *agentStoreRouter) WorkflowList(agentID string) ([]workflow.Workflow, error) {
-	st, err := r.storeFor(agentID)
-	if err != nil {
-		return nil, err
-	}
-	return st.WorkflowList(agentID)
+	return r.mgr.Registry().WorkflowList(agentID)
 }
 func (r *agentStoreRouter) WorkflowCancel(id string) (int, error) {
-	n := 0
-	err := r.eachAgentStore(func(st *memory.Store) error {
-		c, err := st.WorkflowCancel(id)
-		if err != nil {
-			return err
-		}
-		n += c
-		return nil
-	})
-	if err != nil {
-		return 0, err
-	}
-	c, err := r.mgr.Registry().WorkflowCancel(id)
-	return n + c, err
+	return r.mgr.Registry().WorkflowCancel(id)
 }
 func (r *agentStoreRouter) WorkflowFail(id string, all bool) (int, error) {
-	if !all {
-		n := 0
-		err := r.eachAgentStore(func(st *memory.Store) error {
-			c, err := st.WorkflowFail(id, false)
-			if err != nil {
-				return err
-			}
-			n += c
-			return nil
-		})
-		if err != nil {
-			return 0, err
-		}
-		c, err := r.mgr.Registry().WorkflowFail(id, false)
-		return n + c, err
-	}
-	n := 0
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		c, err := st.WorkflowFail("", true)
-		n += c
-		return err
-	}); err != nil {
-		return 0, err
-	}
-	c, err := r.mgr.Registry().WorkflowFail("", true)
-	return n + c, err
+	return r.mgr.Registry().WorkflowFail(id, all)
 }
+
+// SessionEventsByAgent reads the registry journal: session_events stay
+// daemon-wide there (single seq cursor, R-PROTO.15), not in agent dbs.
 func (r *agentStoreRouter) SessionEventsByAgent(agentID string) ([]memory.SessionEvent, error) {
-	st, err := r.storeFor(agentID)
-	if err != nil {
-		return nil, err
-	}
-	return st.SessionEventsByAgent(agentID)
+	return r.mgr.Registry().SessionEventsByAgent(agentID)
 }
 func (r *agentStoreRouter) SessionGet(id string) (memory.SessionSummary, bool, error) {
 	st, err := r.storeFor(id)
@@ -211,8 +170,22 @@ func (r *agentStoreRouter) SessionDelete(id string) (memory.SessionDeleteCounts,
 	if err != nil {
 		return counts, err
 	}
+	// The registry holds the journal and the coordination tables: clear the
+	// session's rows there too, and merge the counts.
+	regCounts, regErr := r.mgr.Registry().SessionDelete(id)
+	if regErr == nil {
+		counts.Conversations += regCounts.Conversations
+		counts.Events += regCounts.Events
+		counts.Notifications += regCounts.Notifications
+		counts.UserNotifications += regCounts.UserNotifications
+		counts.Related += regCounts.Related
+		counts.HumanRequests += regCounts.HumanRequests
+		counts.InteractiveMarkers += regCounts.InteractiveMarkers
+		counts.ToolState += regCounts.ToolState
+		counts.Jobs += regCounts.Jobs
+	}
 	_ = r.mgr.Registry().SessionIndexDelete(id)
-	return counts, nil
+	return counts, err
 }
 func (r *agentStoreRouter) QueueMessage(agentID, message string) error {
 	st, err := r.storeFor(agentID)
@@ -235,61 +208,30 @@ func (r *agentStoreRouter) DrainQueuedMessage(agentID string) (string, error) {
 	}
 	return st.DrainQueuedMessage(agentID)
 }
+// Goals are daemon-wide (registry), like processes and board_tasks: their
+// writes journal state events (goal_created/…), and the wire journal follow
+// carries a single seq cursor that only one db can honour.
 func (r *agentStoreRouter) GoalGet(id string) (*memory.Goal, error) {
-	st, err := r.storeFor(id)
-	if err != nil {
-		return nil, err
-	}
-	return st.GoalGet(id)
+	return r.mgr.Registry().GoalGet(id)
 }
 func (r *agentStoreRouter) GoalCreate(id, desc, parentID, parentType string) error {
-	st, err := r.storeFor(id)
-	if err != nil {
-		return err
-	}
-	return st.GoalCreate(id, desc, parentID, parentType)
+	return r.mgr.Registry().GoalCreate(id, desc, parentID, parentType)
 }
 func (r *agentStoreRouter) GoalDelete(id string) ([]string, error) {
-	st, err := r.storeFor(id)
-	if err != nil {
-		return nil, err
-	}
-	return st.GoalDelete(id)
+	return r.mgr.Registry().GoalDelete(id)
 }
 func (r *agentStoreRouter) GoalUpdateStatus(id, status string) error {
-	st, err := r.storeFor(id)
-	if err != nil {
-		return err
-	}
-	return st.GoalUpdateStatus(id, status)
+	return r.mgr.Registry().GoalUpdateStatus(id, status)
 }
+
 func (r *agentStoreRouter) UserNotificationMarkSeen(id string) error {
-	found, err := r.routeFind(func(st *memory.Store) (bool, error) {
-		return true, st.UserNotificationMarkSeen(id)
-	})
-	_ = found
-	return err
+	return r.mgr.Registry().UserNotificationMarkSeen(id)
 }
 
 // --- daemon-wide reads: fan out and merge ---
 
 func (r *agentStoreRouter) GoalList() ([]memory.Goal, error) {
-	var out []memory.Goal
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		g, err := st.GoalList()
-		if err != nil {
-			return err
-		}
-		out = append(out, g...)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	g, err := r.mgr.Registry().GoalList()
-	if err != nil {
-		return nil, err
-	}
-	return append(out, g...), nil
+	return r.mgr.Registry().GoalList()
 }
 
 func (r *agentStoreRouter) SessionList() ([]memory.SessionSummary, error) {
@@ -312,6 +254,20 @@ func (r *agentStoreRouter) SessionList() ([]memory.SessionSummary, error) {
 			// index entry's own fields so the roster still lists it.
 			sum = memory.SessionSummary{ID: e.ID, Status: e.Status, CreatedAt: e.CreatedAt, UpdatedAt: e.UpdatedAt}
 		}
+		// The journal and the goals/processes that guard a session live in the
+		// registry, so the event count and the protected flag come from there.
+		reg := r.mgr.Registry()
+		if evs, err := reg.SessionEventsByAgent(e.ID); err == nil {
+			sum.Events = len(evs)
+		}
+		protected := false
+		if g, err := reg.GoalGet(e.ID); err == nil && g != nil && g.Status == "active" {
+			protected = true
+		}
+		if procs, err := reg.ProcessesOfSession(e.ID); err == nil && len(procs) > 0 {
+			protected = true
+		}
+		sum.Protected = protected
 		out = append(out, sum)
 	}
 	return out, nil
@@ -336,90 +292,25 @@ func (r *agentStoreRouter) SessionsReapable(maxAge time.Duration) ([]memory.Sess
 	return append(out, s...), nil
 }
 
+// SessionEventsAfter reads the registry journal only: the follow cursor is one
+// daemon-wide seq, which per-db sequences cannot honour.
 func (r *agentStoreRouter) SessionEventsAfter(afterSeq int64, limit int) ([]memory.SessionEvent, error) {
-	var out []memory.SessionEvent
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		e, err := st.SessionEventsAfter(afterSeq, limit)
-		if err != nil {
-			return err
-		}
-		out = append(out, e...)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	e, err := r.mgr.Registry().SessionEventsAfter(afterSeq, limit)
-	if err != nil {
-		return nil, err
-	}
-	return append(out, e...), nil
+	return r.mgr.Registry().SessionEventsAfter(afterSeq, limit)
 }
 
 func (r *agentStoreRouter) SessionEventsBounds() (int64, int64, error) {
-	var oldest, latest int64
-	first := true
-	merge := func(o, l int64, err error) error {
-		if err != nil {
-			return err
-		}
-		if first || (o > 0 && (oldest == 0 || o < oldest)) {
-			oldest = o
-		}
-		if l > latest {
-			latest = l
-		}
-		first = false
-		return nil
-	}
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		o, l, err := st.SessionEventsBounds()
-		return merge(o, l, err)
-	}); err != nil {
-		return 0, 0, err
-	}
-	o, l, err := r.mgr.Registry().SessionEventsBounds()
-	if err := merge(o, l, err); err != nil {
-		return 0, 0, err
-	}
-	return oldest, latest, nil
+	return r.mgr.Registry().SessionEventsBounds()
 }
 
+// UserNotificationList reads the registry: notification writes journal state
+// events, and the journal is registry-global.
 func (r *agentStoreRouter) UserNotificationList(unseenOnly bool) ([]memory.UserNotification, error) {
-	var out []memory.UserNotification
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		n, err := st.UserNotificationList(unseenOnly)
-		if err != nil {
-			return err
-		}
-		out = append(out, n...)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	n, err := r.mgr.Registry().UserNotificationList(unseenOnly)
-	if err != nil {
-		return nil, err
-	}
-	return append(out, n...), nil
+	return r.mgr.Registry().UserNotificationList(unseenOnly)
 }
 
+// HumanRequestListPending reads the registry (HITL writes journal state events).
 func (r *agentStoreRouter) HumanRequestListPending() ([]memory.HumanRequest, error) {
-	var out []memory.HumanRequest
-	if err := r.eachAgentStore(func(st *memory.Store) error {
-		h, err := st.HumanRequestListPending()
-		if err != nil {
-			return err
-		}
-		out = append(out, h...)
-		return nil
-	}); err != nil {
-		return nil, err
-	}
-	h, err := r.mgr.Registry().HumanRequestListPending()
-	if err != nil {
-		return nil, err
-	}
-	return append(out, h...), nil
+	return r.mgr.Registry().HumanRequestListPending()
 }
 
 func (r *agentStoreRouter) JobsRunning() ([]memory.Job, error) {

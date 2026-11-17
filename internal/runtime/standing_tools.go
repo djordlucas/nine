@@ -97,8 +97,20 @@ type StandingRunner struct {
 	// board finishes tasks claimed by boardworker processes
 	// (adr/orchestrator-board.md §5 P3); nil when the board is off.
 	board *boardControl
+	// goalLookup reads one goal wherever its agent db holds it (Q31); nil
+	// reads r.store. Processes are registry-scoped but goals are per-agent,
+	// so with the per-agent layout the runner must not read them from the
+	// registry.
+	goalLookup func(id string) (*memory.Goal, error)
 	// database is the database processes write through nine:sql; nil when the
 	// instance has none.
+}
+
+// SetGoalLookup routes goal reads to the per-agent layout's router.
+func (r *StandingRunner) SetGoalLookup(f func(id string) (*memory.Goal, error)) {
+	if r != nil {
+		r.goalLookup = f
+	}
 }
 
 // SetDatabase gives live processes the database.

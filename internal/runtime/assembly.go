@@ -229,25 +229,40 @@ func Assemble(c AssemblyConfig) *Assembly {
 	}, ckpt)
 
 	// Durable session-event journal (adr/event-log.md): every new session worker
-	// writes its full execution trajectory through this async batched sink. With
-	// the per-agent layout the sink routes each event to its agent's own db (Q31).
+	// writes its full execution trajectory through this async batched sink. The
+	// journal stays in the registry db even with the per-agent layout: the wire's
+	// journal follow carries a single `after` seq cursor (R-PROTO.15), which
+	// per-db sequences cannot honour — fan-out reads merge on a seq that only
+	// exists per store. Agent dbs hold conversations/kv/goals; the event log is
+	// daemon-wide like processes and board_tasks.
 	var journalStore sessionEventStore = c.Store
 	var router *agentStoreRouter
 	if c.AgentStores != nil {
 		router = newAgentStoreRouter(c.AgentStores)
-		journalStore = routingEventStore{resolve: func(sessionID string) (sessionEventStore, error) {
-			return router.storeFor(sessionID)
-		}}
-		// Fresh agent dbs get the skills seed and the journal wake hook.
+		// Fresh agent dbs get the skills seed.
 		c.AgentStores.SetOnOpen(func(st *memory.Store) {
 			if err := SeedSkills(st, c.Embedder); err != nil {
 				slog.Warn("seed skills into agent store", "err", err)
 			}
-			st.OnJournal(daemon.JournalWritten)
 		})
 		if err := memory.MigrateToAgentStores(c.AgentStores); err != nil {
 			slog.Warn("migrate to per-agent stores failed", "err", err)
 		}
+		// Session-scoped rows (checkpoints, names, notifications) route to
+		// the session's agent db; the registry stays the fallback for ids the
+		// index does not know.
+		resolve := func(id string) *memory.Store {
+			st, err := router.storeFor(id)
+			if err != nil {
+				return c.Store
+			}
+			return st
+		}
+		if cs, ok := ckpt.(*SQLCheckpointStore); ok {
+			cs.resolve = resolve
+		}
+		// Notifications stay on the registry: their writes journal state
+		// events, and the journal is registry-global.
 	}
 	sink := NewSQLEventSink(journalStore, daemon.NotifySubscribers)
 	// Every journal write, the sink's and the store's own state changes, wakes
@@ -294,6 +309,11 @@ func Assemble(c AssemblyConfig) *Assembly {
 	// it, so production and the eval harness share it; the caller starts it with
 	// RunStandingTools.
 	runner := NewStandingRunner(c.Store, c.JobMinDelayMS, c.JobWorkers)
+	if router != nil {
+		// Processes live in the registry, but goals live in per-agent dbs:
+		// the runner's goal binding must read through the router.
+		runner.SetGoalLookup(router.GoalGet)
+	}
 	runner.SetToolCaller(processToolCaller{core: core, mgr: c.Plugins})
 	runner.SetWaker(daemon)
 	runner.SetSessions(daemon)

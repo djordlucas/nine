@@ -13,11 +13,17 @@ test('the overview shows the daemon, a backup download and the CLI-only operatio
   await expect(page.getByText('nine restore <snapshot>')).toBeVisible();
 
   const download = page.waitForEvent('download');
-  await page.getByRole('link', { name: 'Download the store (.db)' }).click();
+  await page.getByRole('link', { name: 'Download the store (.tar.gz)' }).click();
   const file = await download;
-  expect(file.suggestedFilename()).toMatch(/^nine-\d{8}-\d{6}\.db$/);
+  expect(file.suggestedFilename()).toMatch(/^nine-\d{8}-\d{6}\.tar\.gz$/);
+  // The archive holds the registry database (nine.db) and every agents/<id>.db,
+  // each a SQLite file (adr/agents-concept.md A4, Q33).
+  const zlib = await import('node:zlib');
   const bytes = await (await file.createReadStream()).toArray();
-  expect(Buffer.concat(bytes).subarray(0, 15).toString()).toBe('SQLite format 3');
+  const tar = zlib.gunzipSync(Buffer.concat(bytes));
+  // The first entry is the registry database, a SQLite file.
+  expect(tar.subarray(0, 100).toString()).toContain('nine.db');
+  expect(tar.indexOf('SQLite format 3')).toBeGreaterThanOrEqual(0);
 });
 
 test('a session is listed, opened and deleted', async ({ page, request }) => {

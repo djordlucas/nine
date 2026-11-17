@@ -620,7 +620,7 @@ func (d *Daemon) handleSessionRename(enc *json.Encoder, agentID, name string) {
 // the in-memory one tests use — takes it under the "name:" key instead.
 func (d *Daemon) saveName(id, name string) error {
 	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
-		return s.store.ConversationNameSave(id, name)
+		return s.NameSave(id, name)
 	}
 	if d.ckpt != nil {
 		return d.ckpt.Save("name:"+id, []byte(name))
@@ -631,7 +631,7 @@ func (d *Daemon) saveName(id, name string) error {
 // loadName is the name saveName kept, or "".
 func (d *Daemon) loadName(id string) string {
 	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
-		return s.store.ConversationNameLoad(id)
+		return s.NameLoad(id)
 	}
 	if d.ckpt != nil {
 		if b, found, err := d.ckpt.Load("name:" + id); err == nil && found {

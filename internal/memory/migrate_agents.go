@@ -23,14 +23,12 @@ var keyedTables = []struct {
 }{
 	{"conversations", "id"},
 	{"related_sessions", "agent_id"},
-	{"workflows", "agent_id"},
-	{"goals", "id"},
-	{"notifications", "conversation_id"},
-	{"human_requests", "agent_id"},
-	{"capability_requests", "agent_id"},
 	{"interactive_sessions", "id"},
 	{"jobs", "owner_id"},
-	{"session_events", "agent_id"},
+	// workflows, goals, notifications, user_notifications, human_requests,
+	// capability_requests/grants and session_events are deliberately absent:
+	// their writes journal state events, and the wire follow's single seq
+	// cursor only works with one global journal in the registry db.
 }
 
 // sharedTables have no agent key; they belong to the default agent.
@@ -103,10 +101,6 @@ func MigrateToAgentStores(m *AgentStores) error {
 			if _, err := reg.db.Exec(`DELETE FROM `+kt.table+` WHERE `+kt.col+` = ?`, convID); err != nil {
 				return fmt.Errorf("clear registry %s for %s: %w", kt.table, convID, err)
 			}
-		}
-		// capability_grants key off capability_requests, which just moved.
-		if err := copyGrantsFor(reg, dst, convID); err != nil {
-			return fmt.Errorf("migrate grants for %s: %w", convID, err)
 		}
 		if err := reg.SessionIndexSet(convID, agent.ID, "active"); err != nil {
 			return err

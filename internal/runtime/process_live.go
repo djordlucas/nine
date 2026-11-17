@@ -176,7 +176,11 @@ func (r *StandingRunner) bindGoals() {
 }
 
 func (r *StandingRunner) goalActive(id string) bool {
-	g, err := r.store.GoalGet(id)
+	get := r.goalLookup
+	if get == nil {
+		get = r.store.GoalGet
+	}
+	g, err := get(id)
 	if err != nil {
 		slog.Warn("live process: read its goal", "goal_id", id, "err", err)
 		return true // a read failure must not stop a process

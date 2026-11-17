@@ -317,9 +317,12 @@ session delete` does, and takes the exact id only. `GET /reflections?agent=…`
 lists what a reflecting session concluded, oldest first; without `agent`, the
 daemon's `self-reflection`.
 
-`GET /backup` downloads a snapshot of the store, written while the daemon runs,
-as `nine backup` writes one; `?with=workspace` makes it a `.tar.gz` holding the
-store and the workspace, and is `400` when no workspace is configured. The daemon
+`GET /backup` downloads a snapshot of the store, written while the daemon runs:
+a `.tar.gz` holding the registry database (`nine.db`) and every agent's own
+`agents/<id>.db`, each vacuumed into its own file so each is consistent by
+construction (adr/agents-concept.md A4, Q33). `?with=workspace` adds the
+workspace's files to the same archive, and is `400` when no workspace is
+configured. (`nine backup <dest.db>` offline writes the registry database alone.) The daemon
 writes the file and the API server streams and removes it, so the two must share
 a filesystem. Restoring stays with `nine restore`, with the daemon stopped.
 

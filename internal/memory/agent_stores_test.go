@@ -126,7 +126,9 @@ func TestMigrateToAgentStores(t *testing.T) {
 		if a.Role == "researcher" {
 			sawResearcher = true
 		}
-		// The conversation row and its journal moved into the agent's db.
+		// The conversation row moved into the agent's db; the journal stays in
+		// the registry (the wire follow's single seq cursor requires one global
+		// journal).
 		st, err := m.AgentStore(a.ID)
 		if err != nil {
 			t.Fatal(err)
@@ -134,16 +136,14 @@ func TestMigrateToAgentStores(t *testing.T) {
 		if _, err := st.ConversationGet(conversationIDForAgent(t, m, a.ID)); err != nil {
 			t.Fatalf("agent %s db missing its conversation: %v", a.ID, err)
 		}
-		evs, err := st.SessionEventsByAgent(conversationIDForAgent(t, m, a.ID))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if a.Role == "researcher" && len(evs) == 0 {
-			t.Fatal("researcher agent's journal did not migrate")
-		}
 	}
 	if !sawResearcher {
 		t.Fatal("no migrated agent adopted the session_created role")
+	}
+	// The event journal stays daemon-wide in the registry db (only conv_1 has
+	// one in this fixture).
+	if evs, err := m.Registry().SessionEventsByAgent("conv_1"); err != nil || len(evs) == 0 {
+		t.Fatalf("registry journal lost conv_1's events: %v %d", err, len(evs))
 	}
 	// Session index maps both conversations.
 	for _, c := range []string{"conv_1", "conv_2"} {

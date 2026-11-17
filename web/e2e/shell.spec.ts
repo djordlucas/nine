@@ -23,7 +23,7 @@ test('the layout fits the viewport', async ({ page }) => {
 
 test('every section is reachable', async ({ page }) => {
   await signIn(page);
-  const sections = ['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'System'];
+  const sections = ['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'Builder', 'System'];
   for (const name of sections) {
     // The rail (desktop) and the tab bar (phone) share the name; the hidden one
     // is not in the accessibility tree, so this finds whichever is shown.
