@@ -58,28 +58,6 @@ func (r *agentStoreRouter) eachAgentStore(fn func(*memory.Store) error) error {
 	return nil
 }
 
-// routeFind runs fn on every store (agent dbs plus the registry) until one
-// reports found.
-func (r *agentStoreRouter) routeFind(fn func(*memory.Store) (bool, error)) (bool, error) {
-	found, err := fn(r.mgr.Registry())
-	if err != nil || found {
-		return found, err
-	}
-	var anyFound bool
-	err = r.eachAgentStore(func(st *memory.Store) error {
-		if anyFound {
-			return nil
-		}
-		f, err := fn(st)
-		if err != nil {
-			return err
-		}
-		anyFound = f
-		return nil
-	})
-	return anyFound, err
-}
-
 // --- registry-scoped: delegate ---
 
 func (r *agentStoreRouter) SkillList() ([]memory.Skill, error)          { return r.mgr.Registry().SkillList() }
@@ -134,6 +112,7 @@ func (r *agentStoreRouter) EventCursorGet(sub string) (int64, error) {
 func (r *agentStoreRouter) EventCursorSet(sub string, seq int64) error {
 	return r.mgr.Registry().EventCursorSet(sub, seq)
 }
+
 
 // --- session-scoped: route through the session index ---
 

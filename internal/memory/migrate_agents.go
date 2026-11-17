@@ -128,67 +128,6 @@ func legacyRole(reg *Store, convID string) string {
 	return p.Role
 }
 
-// copyGrantsFor moves capability_grants whose request belonged to convID.
-func copyGrantsFor(reg, dst *Store, convID string) error {
-	reqIDs := map[string]bool{}
-	rows, err := reg.db.Query(`SELECT id FROM capability_requests WHERE agent_id = ?`, convID)
-	if err != nil {
-		return err
-	}
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			rows.Close()
-			return err
-		}
-		reqIDs[id] = true
-	}
-	rows.Close()
-	if len(reqIDs) == 0 {
-		return nil
-	}
-	grows, err := reg.db.Query(`SELECT * FROM capability_grants`)
-	if err != nil {
-		return err
-	}
-	defer grows.Close()
-	cols, err := grows.Columns()
-	if err != nil {
-		return err
-	}
-	// find the request_id column index
-	reqIdx := -1
-	for i, c := range cols {
-		if c == "request_id" {
-			reqIdx = i
-		}
-	}
-	if reqIdx < 0 {
-		return nil
-	}
-	vals := make([]any, len(cols))
-	ptrs := make([]any, len(cols))
-	for i := range vals {
-		ptrs[i] = &vals[i]
-	}
-	for grows.Next() {
-		if err := grows.Scan(ptrs...); err != nil {
-			return err
-		}
-		rid, _ := vals[reqIdx].(string)
-		if !reqIDs[rid] {
-			continue
-		}
-		if err := insertRow(dst, "capability_grants", cols, vals); err != nil {
-			return err
-		}
-		if _, err := reg.db.Exec(`DELETE FROM capability_grants WHERE request_id = ?`, rid); err != nil {
-			return err
-		}
-	}
-	return grows.Err()
-}
-
 // copyTable copies rows matching `where` from src to dst, then the caller
 // deletes them from src.
 func copyTable(src, dst *Store, table, where string, args ...any) error {
