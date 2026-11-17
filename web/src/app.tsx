@@ -122,6 +122,7 @@ export function App() {
           <Route path="/builder/roles" component={Builder} />
           <Route path="/builder/skills/:name" component={Builder} />
           <Route path="/builder/skills" component={Builder} />
+          <Route path="/builder/data/new" component={Builder} />
           <Route path="/builder/data" component={Builder} />
           <Route path="/builder" component={Builder} />
           <Route path="/system/sessions/:id" component={System} />

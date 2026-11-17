@@ -49,7 +49,7 @@ export function Builder() {
       {view === '/builder/agents' && <AgentsView id={param(params.id as string | undefined)} />}
       {view === '/builder/roles' && <RolesView name={param(params.name as string | undefined)} />}
       {view === '/builder/skills' && <SkillsView name={param(params.name as string | undefined)} />}
-      {view === '/builder/data' && <DataView memoryKey={query.key} />}
+      {view === '/builder/data' && <DataView memoryKey={query.key ?? (path === '/builder/data/new' ? 'new' : undefined)} />}
     </div>
   );
 }
@@ -217,7 +217,7 @@ function AgentsView({ id }: { id?: string }) {
         {!data ? (
           <p class="empty">Loading…</p>
         ) : id ? (
-          <AgentForm key={id} id={id} roles={data.roles} skills={data.skills} onSaved={() => setReloads((n) => n + 1)} onRun={run} onExport={exportBundle} onApprove={approve} onDelete={remove} busy={busy} />
+          <AgentForm key={id} id={id} roles={data.roles} skills={data.skills} reload={reloads} onSaved={() => setReloads((n) => n + 1)} onRun={run} onExport={exportBundle} onApprove={approve} onDelete={remove} busy={busy} />
         ) : (
           <p class="empty">Choose an agent to edit it, run it, export or import bundles.</p>
         )}
@@ -230,6 +230,7 @@ function AgentForm({
   id,
   roles,
   skills,
+  reload,
   onSaved,
   onRun,
   onExport,
@@ -240,6 +241,7 @@ function AgentForm({
   id: string;
   roles: RoleInfo[];
   skills: SkillInfo[];
+  reload: number;
   onSaved: () => void;
   onRun: (id: string) => void;
   onExport: (id: string) => void;
@@ -279,7 +281,7 @@ function AgentForm({
     return () => {
       alive = false;
     };
-  }, [id, isNew]);
+  }, [id, isNew, reload]);
 
   const parseJson = (text: string): Record<string, unknown> | undefined => {
     const t = text.trim();
@@ -761,11 +763,17 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
     setReloads((n) => n + 1);
   };
 
+  // '/builder/data/new' is the NewKey form — a path, not a ?key=, so a phone
+  // (which shows the list or the pane, never both) can reach it from the list.
+  const isNew = memoryKey === 'new';
   return (
     <Split name="builder-data" noun="memory keys" open={memoryKey !== undefined}>
       <nav class={split.list} aria-label="Memory keys">
         <ListHead>
           <input class="input" type="search" aria-label="Filter memory keys" placeholder="Filter keys" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
+          <a class="button" href="/builder/data/new">
+            New key
+          </a>
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
@@ -784,10 +792,15 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Memory key">
-        {memoryKey !== undefined ? (
+        {memoryKey !== undefined && !isNew ? (
           <MemoryEditor key={memoryKey} k={memoryKey} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} />
         ) : (
-          <NewKey onCreated={(key) => route(dataHref(key))} />
+          <NewKey
+            onCreated={(key) => {
+              route(dataHref(key));
+              setReloads((n) => n + 1);
+            }}
+          />
         )}
         <p class="muted">
           The SQL side of the store is browsable on <a href="/data/database">Data → Database</a>.

@@ -187,7 +187,7 @@ them all.
 |---|---|---|
 | Go | `go test` | serving, caching and security headers; cookie login, logout, expiry, CSRF and `Origin`; each new endpoint |
 | Components and client | Vitest | rendering, the API client, stream reconnect and resume |
-| End to end | Playwright in a container | the embedded UI against a real daemon with a scripted model server, at 390×844 and 1440×900. Covers login, each section, a chat turn with a tool call, an `ask_human` answer, an approval, and a process start and stop. |
+| End to end | Playwright in a container | the embedded UI against a real daemon with a scripted model server, at 390×844 and 1440×900. Covers login, each section, a chat turn with a tool call, an `ask_human` answer, an approval, a process start and stop, and the Builder flow (create/run/export/import/approve an agent, CRUD a role, a skill and a memory key). |
 | Coverage | a script in CI | every `openapi.yaml` operation is used by the UI or listed as deliberately unused with a reason |
 
 No model runs in CI. The daemon's provider points at a stub OpenAI-compatible server in
