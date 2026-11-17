@@ -8,9 +8,11 @@ import { expect, signIn, test } from './fixtures';
 
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
-test('the Builder views are reachable', async ({ page }) => {
+test('the Builder is reachable from the section navigation and its views work', async ({ page }) => {
   await signIn(page);
-  await page.goto('/builder');
+  await page.goto('/');
+  await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name: 'Builder', exact: true }).click();
+  await expect(page).toHaveURL(/\/builder/);
   const views = page.getByRole('navigation', { name: 'Builder views' });
   await expect(page.getByRole('navigation', { name: 'Agents' })).toBeVisible();
   for (const label of ['Roles', 'Skills', 'Data']) {
