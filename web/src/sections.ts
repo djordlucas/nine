@@ -42,11 +42,11 @@ export type IconName =
 
 export const sections: Section[] = [
   { path: '/conversations', label: 'Agents', icon: 'chat' },
+  { path: '/builder', label: 'Builder', icon: 'dashboard' },
   { path: '/tools', label: 'Tools', icon: 'tool' },
   { path: '/inbox', label: 'Inbox', icon: 'inbox' },
   { path: '/data', label: 'Data', icon: 'data' },
   { path: '/journal', label: 'Journal', icon: 'journal' },
-  { path: '/builder', label: 'Builder', icon: 'dashboard' },
   { path: '/system', label: 'System', icon: 'system', foot: true },
 ];
 

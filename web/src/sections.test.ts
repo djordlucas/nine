@@ -22,6 +22,6 @@ describe('sectionFor', () => {
     expect(sectionFor('/builder/skills/code-review').label).toBe('Builder');
   });
   it('lists every section for the mobile tab bar, foot ones included', () => {
-    expect(sections.map((s) => s.label)).toEqual(['Agents', 'Tools', 'Inbox', 'Data', 'Journal', 'Builder', 'System']);
+    expect(sections.map((s) => s.label)).toEqual(['Agents', 'Builder', 'Tools', 'Inbox', 'Data', 'Journal', 'System']);
   });
 });
