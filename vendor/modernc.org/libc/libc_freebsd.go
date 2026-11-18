@@ -31,7 +31,6 @@ import (
 	"modernc.org/libc/limits"
 	"modernc.org/libc/netdb"
 	"modernc.org/libc/netinet/in"
-	"modernc.org/libc/pthread"
 	"modernc.org/libc/signal"
 	"modernc.org/libc/stdio"
 	"modernc.org/libc/sys/socket"
@@ -45,6 +44,7 @@ import (
 
 var (
 	in6_addr_any in.In6_addr
+	startTime    = gotime.Now() // For clock(3)
 )
 
 // // Keep these outside of the var block otherwise go generate will miss them.
@@ -162,6 +162,14 @@ func Xfprintf(t *TLS, stream, format, args uintptr) int32 {
 	}
 	n, _ := fwrite(int32((*stdio.FILE)(unsafe.Pointer(stream)).F_file), printf(format, args))
 	return int32(n)
+}
+
+// clock_t clock(void);
+func Xclock(t *TLS) time.Clock_t {
+	if __ccgo_strace {
+		trc("t=%v, (%v:)", t, origin(2))
+	}
+	return time.Clock_t(gotime.Since(startTime) * gotime.Duration(time.CLOCKS_PER_SEC) / gotime.Second)
 }
 
 // int usleep(useconds_t usec);
@@ -1803,11 +1811,41 @@ func X__env_rm_add(tls *TLS, old uintptr, new uintptr) { /* setenv.c:5:6: */
 }
 
 // int unsetenv(const char *name);
+//
+// It is musl's unsetenv. It removes every entry of name from environ and
+// frees those that setenv allocated, which __env_rm_add tracks.
 func Xunsetenv(t *TLS, name uintptr) int32 {
 	if __ccgo_strace {
 		trc("t=%v name=%v, (%v:)", t, name, origin(2))
 	}
-	panic(todo(""))
+	if name == 0 {
+		t.setErrno(errno.EINVAL)
+		return -1
+	}
+
+	l := X__strchrnul(t, name, '=') - name
+	if l == 0 || *(*byte)(unsafe.Pointer(name + l)) != 0 {
+		t.setErrno(errno.EINVAL)
+		return -1
+	}
+
+	p := Environ()
+	w := p
+	for r := p; ; r += uintptrSize {
+		e := *(*uintptr)(unsafe.Pointer(r))
+		if e == 0 {
+			*(*uintptr)(unsafe.Pointer(w)) = 0
+			return 0
+		}
+
+		if Xstrncmp(t, name, e, size_t(l)) == 0 && *(*byte)(unsafe.Pointer(e + l)) == '=' {
+			X__env_rm_add(t, e, 0)
+			continue
+		}
+
+		*(*uintptr)(unsafe.Pointer(w)) = e
+		w += uintptrSize
+	}
 }
 
 // int pause(void);
@@ -2011,21 +2049,6 @@ func X__ccgo_getMutexType(tls *TLS, m uintptr) int32 { /* pthread_mutex_lock.c:3
 	return (*(*int32)(unsafe.Pointer((m /* &.__u */ /* &.__i */))) & 15)
 }
 
-func X__ccgo_pthreadAttrGetDetachState(tls *TLS, a uintptr) int32 { /* pthread_attr_get.c:3:5: */
-	if __ccgo_strace {
-		trc("tls=%v a=%v, (%v:)", tls, a, origin(2))
-	}
-	return *(*int32)(unsafe.Pointer((a /* &.__u */ /* &.__i */) + 6*4))
-}
-
-func Xpthread_attr_init(t *TLS, pAttr uintptr) int32 {
-	if __ccgo_strace {
-		trc("t=%v pAttr=%v, (%v:)", t, pAttr, origin(2))
-	}
-	*(*pthread.Pthread_attr_t)(unsafe.Pointer(pAttr)) = pthread.Pthread_attr_t(0)
-	return 0
-}
-
 // The pthread_mutex_init() function shall initialize the mutex referenced by
 // mutex with attributes specified by attr. If attr is NULL, the default mutex
 // attributes are used; the effect shall be the same as passing the address of
@@ -2046,25 +2069,6 @@ func Xpthread_mutex_init(t *TLS, pMutex, pAttr uintptr) int32 {
 		typ = int(X__ccgo_pthreadMutexattrGettype(t, pAttr))
 	}
 	setMutex(pMutex, newMutex(typ))
-	return 0
-}
-
-func Xpthread_attr_getdetachstate(tls *TLS, a uintptr, state uintptr) int32 { /* pthread_attr_get.c:7:5: */
-	if __ccgo_strace {
-		trc("tls=%v a=%v state=%v, (%v:)", tls, a, state, origin(2))
-	}
-	*(*int32)(unsafe.Pointer(state)) = *(*int32)(unsafe.Pointer((a /* &.__u */ /* &.__i */) + 6*4))
-	return 0
-}
-
-func Xpthread_attr_setdetachstate(tls *TLS, a uintptr, state int32) int32 { /* pthread_attr_setdetachstate.c:3:5: */
-	if __ccgo_strace {
-		trc("tls=%v a=%v state=%v, (%v:)", tls, a, state, origin(2))
-	}
-	if uint32(state) > 1 {
-		return 22
-	}
-	*(*int32)(unsafe.Pointer((a /* &.__u */ /* &.__i */) + 6*4)) = state
 	return 0
 }
 
