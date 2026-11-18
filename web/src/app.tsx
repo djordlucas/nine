@@ -12,7 +12,6 @@ import { Journal } from './pages/Journal';
 import { Login } from './pages/Login';
 import { NotFound } from './pages/NotFound';
 import { System } from './pages/System';
-import { Tools } from './pages/Tools';
 import { param } from './pages/Processes';
 
 /** "/" lands on the Agents page while the Dashboard is away. */
@@ -41,6 +40,19 @@ function WorkflowRedirect() {
   useEffect(() => {
     route('/conversations', true);
   }, []);
+  return null;
+}
+
+/** Old /tools links: the Tools section moved into the Builder (adr/agents-concept.md A8). */
+function ToolsRedirect() {
+  const { path, route } = useLocation();
+  const { params } = useRoute();
+  const name = param(params.name as string | undefined);
+  useEffect(() => {
+    if (path.startsWith('/tools/plugins')) route('/builder/tools/plugins', true);
+    else if (path.startsWith('/tools/skills')) route(name ? `/builder/skills/${encodeURIComponent(name)}` : '/builder/skills', true);
+    else route(name ? `/builder/tools/${encodeURIComponent(name)}` : '/builder/tools', true);
+  }, [path, name]);
   return null;
 }
 
@@ -106,11 +118,14 @@ export function App() {
           <Route path="/goals/workflows/:id" component={WorkflowRedirect} />
           <Route path="/goals/:id" component={GoalRedirect} />
           <Route path="/goals" component={GoalRedirect} />
-          <Route path="/tools/plugins" component={Tools} />
-          <Route path="/tools/skills/:name" component={Tools} />
-          <Route path="/tools/skills" component={Tools} />
-          <Route path="/tools/:name" component={Tools} />
-          <Route path="/tools" component={Tools} />
+          <Route path="/builder/tools/plugins" component={Builder} />
+          <Route path="/builder/tools/:name" component={Builder} />
+          <Route path="/builder/tools" component={Builder} />
+          <Route path="/tools/plugins" component={ToolsRedirect} />
+          <Route path="/tools/skills/:name" component={ToolsRedirect} />
+          <Route path="/tools/skills" component={ToolsRedirect} />
+          <Route path="/tools/:name" component={ToolsRedirect} />
+          <Route path="/tools" component={ToolsRedirect} />
           <Route path="/inbox" component={Inbox} />
           <Route path="/data/database/:table" component={Data} />
           <Route path="/data/*" component={Data} />

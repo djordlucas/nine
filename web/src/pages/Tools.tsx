@@ -1,9 +1,8 @@
 import { useRef, useState } from 'preact/hooks';
-import { useLocation, useRoute } from 'preact-iso';
+import { useLocation } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
 import { duration } from '../format';
 import { useLive } from '../live';
-import { Markdown } from '../markdown';
 import { argsTemplate, groupTools, kindLabels, parseArgs, type Tool } from '../tools';
 import { Toggle } from '../components/Toggle';
 import { Area } from '../components/Area';
@@ -11,61 +10,27 @@ import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
-import { param } from './Processes';
 import styles from './Tools.module.css';
 import { Json } from '../components/Json';
 import { Icon } from '../components/Icon';
 
 type Plugin = Schemas['PluginInfo'];
-type Skill = Schemas['SkillInfo'];
-
-/** The Tools section's views. A tool cannot be named plugins or skills here: those paths are the other views. */
-const views = [
-  { path: '/tools', label: 'Tools' },
-  { path: '/tools/plugins', label: 'Plugins' },
-  { path: '/tools/skills', label: 'Skills' },
-];
 
 /**
- * Tools (adr/web-ui.md §5): the tool roster with provenance and
- * dependencies, one tool's detail with a direct call, versions and delete;
- * the plugins, with reload; and the skills, each readable.
+ * The tool roster with provenance and dependencies, one tool's detail with a
+ * direct call, versions and delete; and the plugins, with reload — now
+ * Builder views at /builder/tools (adr/web-ui.md §5). A tool cannot be named
+ * plugins: that path is the other view.
  */
-export function Tools() {
-  const { path } = useLocation();
-  const { params } = useRoute();
-  const name = param(params.name as string | undefined);
-  const view = path.startsWith('/tools/plugins') ? 'plugins' : path.startsWith('/tools/skills') ? 'skills' : 'tools';
-  return (
-    <div class={styles.section}>
-      <nav class={styles.views} aria-label="Tools views">
-        {views.map((v) => (
-          <a
-            key={v.path}
-            href={v.path}
-            class={styles.view}
-            aria-current={(v.path === '/tools' ? view === 'tools' : path.startsWith(v.path)) ? 'page' : undefined}
-          >
-            {v.label}
-          </a>
-        ))}
-      </nav>
-      {view === 'tools' && <ToolsView name={name} />}
-      {view === 'plugins' && <PluginsView />}
-      {view === 'skills' && <SkillsView name={name} />}
-    </div>
-  );
-}
-
 function toolPath(name: string): string {
-  return `/tools/${encodeURIComponent(name)}`;
+  return `/builder/tools/${encodeURIComponent(name)}`;
 }
 
 async function loadTools(): Promise<Tool[]> {
   return (await get(api.GET('/tools', { params: { query: { limit: 1000 } } }), 'tools')).data ?? [];
 }
 
-function ToolsView({ name }: { name?: string }) {
+export function ToolsView({ name }: { name?: string }) {
   const [reloads, setReloads] = useState(0);
   const { data, error } = useLive(loadTools, [], reloads);
   return (
@@ -170,7 +135,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
     if (data) {
       onChanged();
       setDeleted((n) => n + 1);
-      route('/tools');
+      route('/builder/tools');
       return;
     }
     setOutcome({ ok: false, text: errorMessage(e, 'Could not delete the tool.') });
@@ -179,7 +144,7 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
   return (
     <article class={`card ${detail.detail}`}>
       <header class={detail.head}>
-        <a class={detail.back} href="/tools" aria-label="All tools">
+        <a class={detail.back} href="/builder/tools" aria-label="All tools">
           ‹
         </a>
         <div class={detail.title}>
@@ -374,7 +339,7 @@ function Versions({ name, onRestored }: { name: string; onRestored: () => void }
   );
 }
 
-function PluginsView() {
+export function PluginsView() {
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
@@ -472,97 +437,5 @@ function PluginsView() {
         </ul>
       )}
     </section>
-  );
-}
-
-function skillPath(name: string): string {
-  return `/tools/skills/${encodeURIComponent(name)}`;
-}
-
-function SkillsView({ name }: { name?: string }) {
-  const [filter, setFilter] = useState('');
-  const { data, error } = useLive(
-    async () => {
-      const list = (await get(api.GET('/skills', { params: { query: { limit: 1000 } } }), 'skills')).data ?? [];
-      return [...list].sort((a, b) => a.name.localeCompare(b.name));
-    },
-    [],
-  );
-  const f = filter.trim().toLowerCase();
-  const shown = (data ?? []).filter(
-    (s: Skill) => !f || `${s.name} ${s.description ?? ''} ${(s.tags ?? []).join(' ')}`.toLowerCase().includes(f),
-  );
-  return (
-    <Split name="skills" noun="skills" open={!!name}>
-      <nav class={split.list} aria-label="Skills">
-        <ListHead>
-          <input
-            class="input"
-            type="search"
-            aria-label="Filter skills"
-            placeholder="Filter skills"
-            value={filter}
-            onInput={(e) => setFilter(e.currentTarget.value)}
-          />
-        </ListHead>
-        {error && <p class="error">{error}</p>}
-        {!data && !error && <p class="muted">Loading…</p>}
-        {data && shown.length === 0 && <p class="empty">No skill matches.</p>}
-        {shown.length > 0 && (
-          <ul>
-            {shown.map((s) => (
-              <li key={s.name}>
-                <a href={skillPath(s.name)} class={split.row} aria-current={s.name === name ? 'page' : undefined}>
-                  <span class={detail.badge}>{s.source}</span>
-                  <span class={split.name}>{s.name}</span>
-                  {s.description && <span class={split.meta}>{s.description}</span>}
-                </a>
-              </li>
-            ))}
-          </ul>
-        )}
-      </nav>
-      <section class={split.pane} aria-label="Skill">
-        {name ? <SkillDetail key={name} name={name} /> : <p class="empty">Choose a skill to read it.</p>}
-      </section>
-    </Split>
-  );
-}
-
-const sourceLabels: Record<string, string> = {
-  builtin: 'shipped with Nine',
-  user: 'from the skills directory',
-  agent: 'written by Nine',
-};
-
-function SkillDetail({ name }: { name: string }) {
-  const { data: s, error } = useLive(
-    async () => {
-      const { data, error: e, response } = await api.GET('/skills/{name}', { params: { path: { name } } });
-      if (response.status === 404) return null;
-      if (!data) throw new Error(errorMessage(e, 'Could not load the skill.'));
-      return data;
-    },
-    [],
-  );
-  if (error) return <p class="card error">{error}</p>;
-  if (s === null) return <p class="empty">No skill {name}.</p>;
-  if (!s) return <p class="card muted">Loading…</p>;
-  return (
-    <article class={`card ${detail.detail}`}>
-      <header class={detail.head}>
-        <a class={detail.back} href="/tools/skills" aria-label="All skills">
-          ‹
-        </a>
-        <div class={detail.title}>
-          <h2>{s.name}</h2>
-          <span class="muted">
-            {[sourceLabels[s.source] ?? s.source, ...(s.tags ?? [])].join(' · ')}
-          </span>
-        </div>
-      </header>
-      {s.description && <p class="muted">{s.description}</p>}
-      <Markdown text={s.content} />
-    </article>
   );
 }

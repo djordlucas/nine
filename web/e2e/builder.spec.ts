@@ -21,9 +21,13 @@ test('the Builder is reachable from the section navigation and its views work', 
   }
   const views = page.getByRole('navigation', { name: 'Builder views' });
   await expect(page.getByRole('navigation', { name: 'Agents' })).toBeVisible();
-  for (const label of ['Roles', 'Skills', 'Data']) {
+  for (const label of ['Roles', 'Skills', 'Data', 'Tools', 'Plugins']) {
     await views.getByRole('link', { name: label, exact: true }).click();
-    await expect(page.getByRole('navigation', { name: label === 'Data' ? 'Memory keys' : label })).toBeVisible();
+    if (label === 'Plugins') {
+      await expect(page.getByRole('region', { name: 'Plugins' })).toBeVisible();
+    } else {
+      await expect(page.getByRole('navigation', { name: label === 'Data' ? 'Memory keys' : label })).toBeVisible();
+    }
   }
 });
 

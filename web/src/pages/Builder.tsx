@@ -12,6 +12,7 @@ import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
+import { PluginsView, ToolsView } from './Tools';
 import tools from './Tools.module.css';
 import styles from './Builder.module.css';
 
@@ -26,6 +27,9 @@ const views = [
   { path: '/builder/roles', label: 'Roles' },
   { path: '/builder/skills', label: 'Skills' },
   { path: '/builder/data', label: 'Data' },
+  // Plugins before Tools: /builder/tools is a prefix of /builder/tools/plugins.
+  { path: '/builder/tools/plugins', label: 'Plugins' },
+  { path: '/builder/tools', label: 'Tools' },
 ];
 
 /**
@@ -51,6 +55,8 @@ export function Builder() {
       {view === '/builder/roles' && <RolesView name={param(params.name as string | undefined)} />}
       {view === '/builder/skills' && <SkillsView name={param(params.name as string | undefined)} />}
       {view === '/builder/data' && <DataView memoryKey={query.key ?? (path === '/builder/data/new' ? 'new' : undefined)} />}
+      {view === '/builder/tools/plugins' && <PluginsView />}
+      {view === '/builder/tools' && <ToolsView name={param(params.name as string | undefined)} />}
     </div>
   );
 }

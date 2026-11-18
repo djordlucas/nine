@@ -105,12 +105,12 @@ function Overview() {
             )}
             <dt>Plugins</dt>
             <dd>
-              <a href="/tools/plugins">{data.plugins?.length ?? 0}</a>
+              <a href="/builder/tools/plugins">{data.plugins?.length ?? 0}</a>
             </dd>
           </dl>
         )}
         <p class="muted">
-          Plugins and skills are under <a href="/tools/plugins">Tools</a>.
+          Plugins and skills are under <a href="/builder/tools/plugins">Builder</a>.
         </p>
       </section>
 
