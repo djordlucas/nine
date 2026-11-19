@@ -78,13 +78,19 @@ function Activity({ id, isProcess, onRenamed }: { id: string; isProcess: boolean
   // The board is local to the session; it rides on the right of an
   // orchestrator agent (the role that posts to it).
   const orchestrator = !isProcess && (!conv?.role || conv.role === 'orchestrator');
+  // On a phone the chat comes first and the details sit behind a toggle below
+  // it; on a desktop the panel is always beside the chat.
+  const [showSide, setShowSide] = useState(false);
   return (
     <div class={styles.activity}>
+      <a class={`${detail.back} ${styles.backRow}`} href="/conversations" aria-label="All agents">‹</a>
       <div class={styles.activityMain}>
         {isProcess ? <ProcessChat id={id} /> : <Chat id={id} onRenamed={onRenamed} />}
       </div>
-      <aside class={styles.activitySide} aria-label="Agent details">
-        <a class={detail.back} href="/conversations" aria-label="All agents">‹</a>
+      <button type="button" class={`button ${styles.sideToggle}`} aria-expanded={showSide} onClick={() => setShowSide((s) => !s)}>
+        {showSide ? 'Hide details' : 'Details'}
+      </button>
+      <aside class={`${styles.activitySide} ${showSide ? '' : styles.sideHidden}`} aria-label="Agent details">
         {isProcess ? <ProcessPanel id={id} /> : <ConversationPanel info={conv} />}
         {orchestrator && <BoardPanel conversation={id} />}
       </aside>

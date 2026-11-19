@@ -114,6 +114,11 @@
   min-width: 0;
 }
 
+/* The back-to-list link spans the activity grid, above the chat and panel. */
+.backRow {
+  grid-column: 1 / -1;
+}
+
 .activitySide {
   position: sticky;
   top: 0;
@@ -139,11 +144,22 @@
   }
 }
 
+/* On a phone the chat comes first; the details — and the orchestrator's
+   board — sit behind a toggle below it. On a desktop the toggle is hidden
+   and the panel always shows beside the chat. */
+.sideToggle {
+  display: none;
+}
+
 @media (max-width: 767px) {
-  /* On a phone the details — and the orchestrator's board — come first; the
-     activity scrolls below. */
-  .activitySide {
-    order: -1;
+  .sideToggle {
+    display: inline-flex;
+    align-self: start;
+    justify-self: start;
+  }
+
+  .activitySide.sideHidden {
+    display: none;
   }
 }
 

@@ -20,7 +20,12 @@ async function deleteGoal(request: APIRequestContext, id: string) {
 const processPage = (id: string) => `/processes/${encodeURIComponent(`goal:${id}`)}`;
 const state = (page: Page) => page.getByRole('complementary', { name: 'Agent details' }).locator('header');
 
-test('a process is stopped and started from its page', async ({ page, request }) => {
+// On a phone the details sit behind a toggle below the chat.
+const openDetails = async (page: Page, isMobile: boolean) => {
+  if (isMobile) await page.getByRole('button', { name: 'Details', exact: true }).click();
+};
+
+test('a process is stopped and started from its page', async ({ page, request, isMobile }) => {
   const description = `e2e process ${Date.now()}`;
   const id = await createGoal(request, description);
   try {
@@ -28,6 +33,7 @@ test('a process is stopped and started from its page', async ({ page, request })
     await page.goto('/processes');
     await expect(page.getByText(/of \d+ running/)).toBeVisible();
     await page.getByRole('navigation', { name: 'Agents' }).getByRole('link', { name: new RegExp(description) }).click();
+    await openDetails(page, isMobile);
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
@@ -43,7 +49,7 @@ test('a process is stopped and started from its page', async ({ page, request })
   }
 });
 
-test('pausing a goal stops its process, and resuming it starts it again', async ({ page, request }) => {
+test('pausing a goal stops its process, and resuming it starts it again', async ({ page, request, isMobile }) => {
   const description = `e2e goal pause ${Date.now()}`;
   const id = await createGoal(request, description);
   try {
@@ -59,6 +65,7 @@ test('pausing a goal stops its process, and resuming it starts it again', async 
 
     // The process page sends a goal-stopped process back to its goal.
     await page.goto(processPage(id));
+    await openDetails(page, isMobile);
     await expect(page.getByText(/Stopped by its goal/)).toBeVisible();
     await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Resume goal' }).click();
@@ -68,7 +75,7 @@ test('pausing a goal stops its process, and resuming it starts it again', async 
   }
 });
 
-test('a goal created through the API appears on the Agents page, attached to its process', async ({ page, request }) => {
+test('a goal created through the API appears on the Agents page, attached to its process', async ({ page, request, isMobile }) => {
   const description = `e2e agent goal ${Date.now()}`;
   const id = await createGoal(request, description);
   try {
@@ -80,13 +87,14 @@ test('a goal created through the API appears on the Agents page, attached to its
     // The old /goals/:id link lands on the goal's process.
     await page.goto(`/goals/${id}`);
     await expect(page).toHaveURL(new RegExp(`/processes/goal%3A${id}$`));
+    await openDetails(page, isMobile);
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
   } finally {
     await deleteGoal(request, id);
   }
 });
 
-test('a process agent’s activity is its session, read-only', async ({ page, request }) => {
+test('a process agent’s activity is its session, read-only', async ({ page, request, isMobile }) => {
   const id = await createGoal(request, `e2e watch ${Date.now()}`);
   try {
     await signIn(page);
@@ -99,6 +107,7 @@ test('a process agent’s activity is its session, read-only', async ({ page, re
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveCount(0);
     await expect(page.getByRole('button', { name: 'Delete', exact: true })).toHaveCount(0);
     // The process’s specifics sit in the panel on the right.
+    await openDetails(page, isMobile);
     const side = page.getByRole('complementary', { name: 'Agent details' });
     await expect(side.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(side.getByText('Budget today')).toBeVisible();

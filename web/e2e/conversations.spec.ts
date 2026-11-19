@@ -127,3 +127,20 @@ test('the plan button steps through the modes for the session, and the context u
   await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
   await expect(page.getByText(/^ctx \d/)).toBeVisible();
 });
+
+test('on a phone the chat sits above the details toggle; on a desktop the panel shows beside it', async ({ page, isMobile }) => {
+  await newConversation(page);
+  const composer = page.getByRole('textbox', { name: 'Message' });
+  const toggle = page.getByRole('button', { name: 'Details', exact: true });
+  const side = page.getByRole('complementary', { name: 'Agent details' });
+  if (isMobile) {
+    await expect(toggle).toBeVisible();
+    await expect(side).toBeHidden();
+    expect((await composer.boundingBox())!.y).toBeLessThan((await toggle.boundingBox())!.y);
+    await toggle.click();
+    await expect(side).toBeVisible();
+  } else {
+    await expect(toggle).toBeHidden();
+    await expect(side).toBeVisible();
+  }
+});
