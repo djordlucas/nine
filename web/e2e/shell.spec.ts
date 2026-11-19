@@ -17,8 +17,13 @@ test('the session survives a reload and a deep link', async ({ page }) => {
 
 test('the layout fits the viewport', async ({ page }) => {
   await signIn(page);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+  // The Builder's view tabs are the widest strip; a conversation page has the
+  // roster, chat and side panel.
+  for (const path of ['/', '/builder', '/builder/tools', '/conversations']) {
+    await page.goto(path);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  }
 });
 
 test('every section is reachable', async ({ page }) => {

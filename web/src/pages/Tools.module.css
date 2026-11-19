@@ -28,6 +28,19 @@
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
+/* On a phone six views do not fit one row: the tab strip scrolls sideways
+   instead of clipping the last tab. */
+@media (max-width: 767px) {
+  .views {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .view {
+    flex-shrink: 0;
+  }
+}
+
 .group {
   display: grid;
   gap: var(--space-2);
