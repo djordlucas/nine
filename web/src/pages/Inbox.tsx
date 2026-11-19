@@ -65,7 +65,7 @@ function Request({ r }: { r: CapabilityRequest }) {
       <p class={styles.what}>
         {r.tool_name ? (
           <>
-            <a href={`/tools/${encodeURIComponent(r.tool_name)}`}>{r.tool_name}</a> wants{' '}
+            <a href={`/builder/tools/${encodeURIComponent(r.tool_name)}`}>{r.tool_name}</a> wants{' '}
           </>
         ) : (
           'Nine wants '

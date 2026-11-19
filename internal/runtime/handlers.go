@@ -2,6 +2,7 @@ package runtime
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -159,6 +160,15 @@ type conversationCreator interface {
 }
 
 func (d *Daemon) newConversation(interactive bool, role string) (string, error) {
+	return d.newConversationFromAgent(interactive, role, "")
+}
+
+// newConversationFromAgent is newConversation with the stored agent the
+// conversation is run from (adr/agents-concept.md A5/Q12): agentID is '' for a
+// directly created conversation. The agent's role names the conversation's
+// role, and the agent link is persisted so a restart rebuilds the session from
+// the same bundle.
+func (d *Daemon) newConversationFromAgent(interactive bool, role, agentID string) (string, error) {
 	if role != "" && role != OrchestratorRole && !d.knownRole(role) {
 		return "", fmt.Errorf("unknown role %q (roles_list shows the registry)", role)
 	}
@@ -168,17 +178,35 @@ func (d *Daemon) newConversation(interactive bool, role string) (string, error) 
 			slog.Warn("mark interactive failed", "id", id, "err", err)
 		}
 	}
-	r := d.makeAgentWorker(id, nil, interactive, role)
+	r := d.makeAgentWorkerFromAgent(id, nil, interactive, role, agentID)
 	d.mu.Lock()
 	d.sessions[id] = r
 	d.mu.Unlock()
 	// Persist the row now: the session list reads the durable store, so without
 	// this a fresh conversation is invisible until its first checkpoint — and
-	// gone entirely after a daemon restart.
+	// gone entirely after a daemon restart. The session index is written first:
+	// with the per-agent layout (adr/agents-concept.md A4) it decides which
+	// agent db the conversation row lands in.
 	if d.store != nil {
+		if si, ok := d.store.(interface{ SessionIndexSet(id, agentID string) error }); ok {
+			mapAgent := agentID
+			if mapAgent == "" {
+				mapAgent = memory.DefaultAgentID
+			}
+			if err := si.SessionIndexSet(id, mapAgent); err != nil {
+				slog.Warn("persist session index failed", "id", id, "err", err)
+			}
+		}
 		if cc, ok := d.store.(conversationCreator); ok {
 			if err := cc.ConversationCreate(id); err != nil {
 				slog.Warn("persist new conversation failed", "id", id, "err", err)
+			}
+		}
+		if agentID != "" {
+			if cs, ok := d.store.(interface{ ConversationSetAgent(id, agentID string) error }); ok {
+				if err := cs.ConversationSetAgent(id, agentID); err != nil {
+					slog.Warn("persist conversation agent failed", "id", id, "agent", agentID, "err", err)
+				}
 			}
 		}
 	}
@@ -254,13 +282,19 @@ func (d *Daemon) attach(agentID string) error {
 // rebuilds the pursue role it runs under; any other session is a conversation,
 // under the orchestrator role.
 func (d *Daemon) makeAgentWorker(id string, checkpointData []byte, interactive bool, role string) *AgentWorker {
+	return d.makeAgentWorkerFromAgent(id, checkpointData, interactive, role, "")
+}
+
+// makeAgentWorkerFromAgent is makeAgentWorker with the stored agent the session
+// runs from, '' for none (adr/agents-concept.md A5).
+func (d *Daemon) makeAgentWorkerFromAgent(id string, checkpointData []byte, interactive bool, role, agentID string) *AgentWorker {
 	if p, ok := d.processRole(id); ok {
 		return d.buildWorker(id, checkpointData, p)
 	}
 	if role == "" {
 		role = OrchestratorRole
 	}
-	return d.buildWorker(id, checkpointData, RoleParams{Role: role, Interactive: interactive})
+	return d.buildWorker(id, checkpointData, RoleParams{Role: role, Interactive: interactive, AgentID: agentID})
 }
 
 // knownRole reports whether name is in the role registry.
@@ -287,7 +321,8 @@ func (d *Daemon) handleRolesList(enc *json.Encoder) {
 	for _, r := range d.agent.Roles() {
 		out = append(out, protocol.RoleInfo{
 			Name: r.Name, Description: r.Description,
-			AllTools: r.AllTools, Tools: r.Tools, Delegates: r.Delegates,
+			AllTools: r.AllTools, Tools: r.Tools, Delegates: r.Delegates, Leaf: r.Leaf,
+			SpawnsGoals: r.SpawnsGoals, Persists: r.Persists, Interactive: r.Interactive,
 		})
 	}
 	raw, _ := json.Marshal(out)
@@ -585,7 +620,7 @@ func (d *Daemon) handleSessionRename(enc *json.Encoder, agentID, name string) {
 // the in-memory one tests use — takes it under the "name:" key instead.
 func (d *Daemon) saveName(id, name string) error {
 	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
-		return s.store.ConversationNameSave(id, name)
+		return s.NameSave(id, name)
 	}
 	if d.ckpt != nil {
 		return d.ckpt.Save("name:"+id, []byte(name))
@@ -596,7 +631,7 @@ func (d *Daemon) saveName(id, name string) error {
 // loadName is the name saveName kept, or "".
 func (d *Daemon) loadName(id string) string {
 	if s, ok := d.ckpt.(*SQLCheckpointStore); ok {
-		return s.store.ConversationNameLoad(id)
+		return s.NameLoad(id)
 	}
 	if d.ckpt != nil {
 		if b, found, err := d.ckpt.Load("name:" + id); err == nil && found {
@@ -821,6 +856,33 @@ func (d *Daemon) handlePluginsReload(enc *json.Encoder) {
 	d.mgr.ReloadUserPlugins()
 	data, _ := json.Marshal(d.pluginStatuses())
 	enc.Encode(protocol.NewTextMsg(protocol.TypePluginsReload, string(data))) //nolint:errcheck
+}
+
+// handlePluginInstall installs a user plugin into a running daemon
+// (adr/agents-concept.md A7, Q19/Q20): files arrive base64 in the wire payload,
+// land in [plugins].user_dir after the disabled/collision vetting, and the
+// existing reload starts them — so their tools reach running sessions from the
+// next turn (Q32). Operator-only: no model tool maps here.
+func (d *Daemon) handlePluginInstall(enc *json.Encoder, filesB64 map[string]string) {
+	if d.mgr == nil {
+		enc.Encode(protocol.NewErrorMsg("plugin manager not available")) //nolint:errcheck
+		return
+	}
+	files := make(map[string][]byte, len(filesB64))
+	for name, b64 := range filesB64 {
+		raw, err := base64.StdEncoding.DecodeString(b64)
+		if err != nil {
+			enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("plugin_install: %s is not base64: %v", name, err))) //nolint:errcheck
+			return
+		}
+		files[name] = raw
+	}
+	if _, err := d.mgr.InstallUserPlugin(files); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	data, _ := json.Marshal(d.pluginStatuses())
+	enc.Encode(protocol.NewTextMsg(protocol.TypePluginInstall, string(data))) //nolint:errcheck
 }
 
 // pluginStatuses assembles the plugin roster from the manager: every running

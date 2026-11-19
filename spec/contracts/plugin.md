@@ -220,8 +220,18 @@ absent disables the feature; it is purely additive and never touches built-ins.
 - **Reload.** `nine plugins reload` (the `plugins_reload` wire message) re-runs
   discovery, stopping and restarting **only** user plugins; built-ins are
   untouched. It is an operator CLI/wire action, not an agent tool (R-PLUG.7).
-  Newly-started plugins are seen by subsequently-built agent loops; in-flight turns
-  keep the tool set they started with.
+- **Install at runtime** (adr/agents-concept.md A7, Q19/Q20/Q32). `nine plugin
+  install <dir|file|url>` (the `plugin_install` wire message, `POST
+  /api/v1/plugins/install`) lands a plugin's files — one `<name>.toml` manifest
+  plus its entrypoint and sidecars — into `[plugins].user_dir` **without a
+  restart**: the files are staged, vetted (disabled list, MCP handshake probe,
+  tool collision via `firstToolCollision` — any refusal leaves nothing behind and
+  never overwrites an existing file), moved into place, and the reload runs. A
+  health check (`Manager.HealthCheck`, a `tools/list` round trip on the live
+  connection) gates exposure of the started plugin's tools. Operator-only: no
+  agent tool maps here. After a reload, running loops re-resolve their tool
+  definitions at each turn start (`Loop.ToolsForTurn` + `Dispatcher.RefreshPlugins`),
+  so new tools are granted from the **next turn** — never mid-turn.
 - **Pre-flight.** `nine plugin validate` runs the same handshake locally (no
   daemon), so a binary can be vetted before deployment.
 

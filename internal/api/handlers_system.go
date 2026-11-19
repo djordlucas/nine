@@ -405,3 +405,45 @@ func toAnySlice[T any](in []T) []any {
 	}
 	return out
 }
+
+// SetMemoryValue writes one key of the key-value memory (operator-only;
+// adr/agents-concept.md A8) — the same store row memory_set writes in a turn.
+func (s *Server) SetMemoryValue(ctx context.Context, request apigen.SetMemoryValueRequestObject) (apigen.SetMemoryValueResponseObject, error) {
+	if request.Body == nil || request.Body.Key == "" {
+		return apigen.SetMemoryValue400JSONResponse(
+			errorBody("invalid_request", "missing key", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.SetMemoryValue503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	if err := cl.MemorySet(request.Body.Key, request.Body.Value); err != nil {
+		return apigen.SetMemoryValue500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.SetMemoryValue200JSONResponse{Key: request.Body.Key, Value: request.Body.Value}, nil
+}
+
+// DeleteMemoryValue deletes one key of the key-value memory (operator-only;
+// adr/agents-concept.md A8).
+func (s *Server) DeleteMemoryValue(ctx context.Context, request apigen.DeleteMemoryValueRequestObject) (apigen.DeleteMemoryValueResponseObject, error) {
+	if request.Params.Key == "" {
+		return apigen.DeleteMemoryValue400JSONResponse(
+			errorBody("invalid_request", "missing key", nil)), nil
+	}
+	cl, err := s.getDaemonClient()
+	if err != nil {
+		return apigen.DeleteMemoryValue503JSONResponse(
+			errorBody("service_unavailable", err.Error(), nil)), nil
+	}
+	defer cl.Close()
+
+	if err := cl.MemoryDelete(request.Params.Key); err != nil {
+		return apigen.DeleteMemoryValue500JSONResponse(
+			errorBody("server_error", err.Error(), nil)), nil
+	}
+	return apigen.DeleteMemoryValue200JSONResponse{Message: "deleted " + request.Params.Key}, nil
+}

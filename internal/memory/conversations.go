@@ -14,6 +14,9 @@ type Conversation struct {
 	History      json.RawMessage `json:"history,omitempty"`
 	Scratchpad   json.RawMessage `json:"scratchpad,omitempty"`
 	Status       string          `json:"status"`
+	// AgentID names the stored agent this conversation was run from, '' for a
+	// directly created conversation (adr/agents-concept.md A5).
+	AgentID      string          `json:"agent_id,omitempty"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`
 	QueuedMsgs   json.RawMessage `json:"queued_messages,omitempty"`
@@ -170,14 +173,22 @@ func (s *Store) ConversationCreate(id string) error {
 	return err
 }
 
+// ConversationSetAgent records which stored agent a conversation was run from
+// (adr/agents-concept.md A5) — '' clears it.
+func (s *Store) ConversationSetAgent(id, agentID string) error {
+	_, err := s.db.Exec(`UPDATE conversations SET agent_id = ?, updated_at = ? WHERE id = ?`,
+		agentID, nowText(), id)
+	return err
+}
+
 // ConversationGet returns the conversation by id. Returns (nil, nil) if not found.
 func (s *Store) ConversationGet(id string) (*Conversation, error) {
 	var c Conversation
 	var historyStr, scratchpadStr, queuedMsgsStr string
 	err := s.db.QueryRow(
-		`SELECT id, history, scratchpad, status, created_at, updated_at, queued_messages
+		`SELECT id, history, scratchpad, status, agent_id, created_at, updated_at, queued_messages
 		 FROM conversations WHERE id = ?`, id).
-		Scan(&c.ID, &historyStr, &scratchpadStr, &c.Status, &c.CreatedAt, &c.UpdatedAt, &queuedMsgsStr)
+		Scan(&c.ID, &historyStr, &scratchpadStr, &c.Status, &c.AgentID, &c.CreatedAt, &c.UpdatedAt, &queuedMsgsStr)
 	if err == sql.ErrNoRows {
 		return nil, nil
 	}

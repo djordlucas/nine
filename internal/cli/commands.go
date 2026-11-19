@@ -172,6 +172,8 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		return c.processCommand(cfg, args[1:])
 	case "board":
 		return c.boardCommand(cfg, args[1:])
+	case "agent", "agents":
+		return c.agentCommand(cfg, args[1:])
 	case "tool":
 		if len(args) < 2 {
 			return fmt.Errorf("%s", toolUsage)
@@ -196,14 +198,23 @@ func (c *CLI) Run(args []string, cfg *config.Config) error {
 		// built-in plugin child, and cmd/nine/main.go dispatches it before the
 		// config or this CLI is built, so a plugin process holds no StartDaemon
 		// (spec/contracts/plugin.md R-PLUG.13).
-		if len(args) < 2 || args[1] != "validate" {
-			return fmt.Errorf("usage: nine plugin validate [path]")
+		if len(args) < 2 {
+			return fmt.Errorf("usage: nine plugin validate [path] | install <dir|file|url>")
 		}
-		p := ""
-		if len(args) > 2 {
-			p = args[2]
+		switch args[1] {
+		case "validate":
+			p := ""
+			if len(args) > 2 {
+				p = args[2]
+			}
+			return c.PluginValidate(cfg, p)
+		case "install":
+			if len(args) < 3 {
+				return fmt.Errorf("usage: nine plugin install <dir|file|url>")
+			}
+			return c.PluginInstall(cfg, args[2])
 		}
-		return c.PluginValidate(cfg, p)
+		return fmt.Errorf("usage: nine plugin validate [path] | install <dir|file|url>")
 	case "status":
 		return c.Status(cfg)
 	case "context":
@@ -369,7 +380,7 @@ const mcpUsage = "usage: nine mcp export  — serve the daemon's tools as an MCP
 
 const processUsage = "usage: nine process [list | show <id> [-n N] | start <id> | stop <id> | send <id> <text>]"
 
-const boardUsage = "usage: nine board [list | show <id> | create <title> [spec] | edit <id> [--title T] [--spec S] [--status S] [--result R] [--clear-claim] | delete <id>]"
+const boardUsage = "usage: nine board [list | show <id> | create <title> [spec] [--role R] | edit <id> [--title T] [--spec S] [--status S] [--result R] [--role R] [--clear-claim] | delete <id>]"
 
 // boardCommand runs `nine board …`; with no subcommand it lists
 // (adr/orchestrator-board.md §2.6).
@@ -385,13 +396,33 @@ func (c *CLI) boardCommand(cfg *config.Config, args []string) error {
 		return c.BoardShow(cfg, args[1])
 	case "create":
 		if len(args) < 2 {
-			return fmt.Errorf("usage: nine board create <title> [spec]")
+			return fmt.Errorf("usage: nine board create <title> [spec] [--role R]")
 		}
 		spec := ""
-		if len(args) > 2 {
-			spec = strings.Join(args[2:], " ")
+		role := ""
+		var rest []string
+		skip := false
+		for _, a := range args[2:] {
+			if skip {
+				skip = false
+				continue
+			}
+			if a == "--role" {
+				skip = true
+				continue
+			}
+			rest = append(rest, a)
 		}
-		return c.BoardCreate(cfg, args[1], spec)
+		// The value after the last --role, when present.
+		for i, a := range args[2:] {
+			if a == "--role" && i+1 < len(args[2:]) {
+				role = args[2:][i+1]
+			}
+		}
+		if len(rest) > 0 {
+			spec = strings.Join(rest, " ")
+		}
+		return c.BoardCreate(cfg, args[1], spec, role)
 	case "edit":
 		if len(args) < 2 {
 			return fmt.Errorf("%s", boardUsage)
@@ -421,7 +452,7 @@ func boardEditFlags(rest []string) (map[string]string, bool, error) {
 		switch a {
 		case "--clear-claim":
 			clearClaim = true
-		case "--title", "--spec", "--status", "--result", "--priority":
+		case "--title", "--spec", "--status", "--result", "--priority", "--role":
 			if len(rest) == 0 {
 				return nil, false, fmt.Errorf("%s needs a value", a)
 			}

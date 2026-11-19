@@ -54,6 +54,8 @@ tags:
   description: 'Everything Nine runs between turns: list, inspect, start, stop, message.'
 - name: board
   description: 'The orchestrator board (adr/orchestrator-board.md): the shared task queue — full CRUD for operators.'
+- name: agents
+  description: 'Stored agents (adr/agents-concept.md): compose a definition (role, skills, self-model, reflection), run it, and export/import it as a bundle — full CRUD for operators.'
 - name: roles
   description: 'The role registry: the agents conversations and delegations can run as (adr/orchestrator-board.md §2.2.1).'
 - name: events
@@ -229,6 +231,103 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemoryValue'
+        '400':
+          description: missing key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: no such key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    put:
+      operationId: setMemoryValue
+      summary: Set one memory key
+      description: Writes one key of the key-value memory (operator-only; adr/agents-concept.md A8). The same store row memory_set writes in a turn.
+      tags:
+      - health
+      requestBody:
+        required: true
+        description: The key and value to store.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MemorySetRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryValue'
+        '400':
+          description: missing key
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: daemon unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteMemoryValue
+      summary: Delete one memory key
+      description: Deletes one key of the key-value memory (operator-only; adr/agents-concept.md A8).
+      tags:
+      - health
+      parameters:
+      - name: key
+        in: query
+        description: the key, e.g. self/identity
+        required: true
+        schema:
+          type: string
+          minLength: 1
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
         '400':
           description: missing key
           content:
@@ -2136,6 +2235,43 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /plugins/install:
+    post:
+      operationId: installPlugin
+      summary: Install a plugin into the running daemon
+      description: 'Operator-only (adr/agents-concept.md A7, Q20 — never exposed to models). Takes the plugin''s files — one <name>.toml manifest plus its entrypoint and any sidecars, keyed by path relative to [plugins].user_dir, values base64 — vets them (disabled list, MCP handshake, tool collision), lands them in the user dir and reloads, so the plugin''s tools reach running sessions from their next turn (Q32). Nothing is overwritten: an existing file is a 400 refusal.'
+      tags:
+      - plugins
+      requestBody:
+        required: true
+        description: 'The plugin''s files, base64-encoded, keyed by relative path.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PluginInstallRequest'
+      responses:
+        '200':
+          description: Installed and loaded; the roster shows it.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReloadPluginsResponse'
+        '400':
+          description: refused — unsafe path, missing/duplicate manifest, disabled plugin, existing file, not an MCP plugin, or a tool collision
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /processes:
     get:
       operationId: listProcesses
@@ -2559,6 +2695,365 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+  /agents:
+    get:
+      operationId: listAgents
+      summary: List agents
+      description: Returns every stored agent definition — the composable bundles (role, skills, self-model, reflection) that POST /agents builds and POST /agents/{id}/run starts (adr/agents-concept.md A5) — oldest first.
+      tags:
+      - agents
+      parameters:
+      - name: limit
+        in: query
+        description: Maximum items to return
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 50
+      - name: offset
+        in: query
+        description: Items to skip before the page
+        schema:
+          type: integer
+          minimum: 0
+          default: 0
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListAgentsResponse'
+        '400':
+          description: invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    post:
+      operationId: createAgent
+      summary: Compose an agent
+      description: Creates a stored agent definition (adr/agents-concept.md A5). The name is required; role names a role from GET /roles, empty resolving to the default role when the agent runs. Every later change is recorded as a new version (Q14).
+      tags:
+      - agents
+      requestBody:
+        required: true
+        description: The agent definition to store.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentDefinition'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: refused (empty name, bad skills JSON) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}:
+    get:
+      operationId: getAgent
+      summary: Get an agent
+      description: Returns one stored agent definition in full, with its current version.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    patch:
+      operationId: updateAgent
+      summary: Update an agent
+      description: Changes one stored agent definition; only the fields present are changed. Each update bumps the version and records it (adr/agents-concept.md Q14).
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: The fields to change.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentPatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: refused (empty name, bad skills JSON) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteAgent
+      summary: Delete an agent
+      description: Deletes one stored agent definition and its version history. Running conversations opened from it are unaffected.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentDeleteResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}/run:
+    post:
+      operationId: runAgent
+      summary: Run an agent
+      description: Starts a conversation from the stored agent — the agent's role names the new conversation's role, no new session kind (adr/agents-concept.md Q12). Returns the conversation id to talk to.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: false
+        description: Run options.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentRunRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentRunResult'
+        '400':
+          description: refused (unknown role) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/import:
+    post:
+      operationId: importAgent
+      summary: Import an agent bundle
+      description: Imports a bundle tar (adr/agents-concept.md Q6 — manifest only until phase 3 adds the database). The agent is created **staged** and cannot run until approved via POST /agents/{id}/approve (Q30); the import is journaled.
+      tags:
+      - agents
+      requestBody:
+        required: true
+        description: The bundle to import.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentImportRequest'
+      responses:
+        '200':
+          description: OK — the staged agent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '400':
+          description: refused (bad bundle, unknown role) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}/export:
+    get:
+      operationId: exportAgent
+      summary: Export an agent as a bundle
+      description: Returns the agent's bundle — a tar holding agent.json with the definition (name, role, skills, self-model, reflection; adr/agents-concept.md Q6) — as base64. Phase 3 adds the agent's database as agent.db in the same tar.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentExportResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /agents/{id}/approve:
+    post:
+      operationId: approveAgent
+      summary: Approve a staged agent
+      description: Moves an imported (staged) agent to active so it can run (adr/agents-concept.md Q30). The approval is journaled. Already-active agents pass through unchanged.
+      tags:
+      - agents
+      parameters:
+      - name: id
+        in: path
+        description: agent id, as the list shows it (agent_…)
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Agent'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /roles:
     get:
       operationId: listRoles
@@ -2575,6 +3070,128 @@ paths:
                 $ref: '#/components/schemas/ListRolesResponse'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    post:
+      operationId: createRole
+      summary: Create a role
+      description: 'Creates a role as a catalog skill with a role block (operator-only; adr/agents-concept.md A8, Q23 — roles are skills, one store, two front doors). Refused when a builtin or user skill of the name exists.'
+      tags:
+      - roles
+      requestBody:
+        required: true
+        description: 'The role to create: name, description, tool boundary (all_tools or tools) and structural flags.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RoleCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleInfo'
+        '400':
+          description: refused (empty name, invalid tool list, name owned by a source file) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+  /roles/{name}:
+    patch:
+      operationId: updateRole
+      summary: Update a role
+      description: 'Patches one role''s definition (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.'
+      tags:
+      - roles
+      parameters:
+      - name: name
+        in: path
+        description: role name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: The fields to change on the role.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RolePatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RoleInfo'
+        '400':
+          description: refused or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: role not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteRole
+      summary: Delete a role
+      description: 'Deletes one role (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.'
+      tags:
+      - roles
+      parameters:
+      - name: name
+        in: path
+        description: role name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: refused (owned by a source file / missing key) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: role not found
+          content: *id001
         '429':
           $ref: '#/components/responses/TooManyRequests'
         '500':
@@ -2702,6 +3319,42 @@ paths:
       security:
       - bearerAuth: []
       - cookieAuth: []
+    post:
+      operationId: createSkill
+      summary: Create a skill
+      description: 'Writes a new skill into the catalog (operator-only; adr/agents-concept.md A8, Q23 — the model''s skill_write calls the same store layer). Refused when a builtin or user skill of the name exists: those are owned by their source file.'
+      tags:
+      - skills
+      requestBody:
+        required: true
+        description: 'The skill to write: name, description, tags and the Markdown body.'
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillCreateRequest'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          description: refused (empty name, name owned by a source file) or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
   /spec:
     get:
       operationId: listSpec
@@ -2809,6 +3462,91 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SkillDetail'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: skill not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    patch:
+      operationId: updateSkill
+      summary: Update a skill
+      description: 'Patches one skill; only the fields present change (like the model''s skill_modify, same store layer — adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.'
+      tags:
+      - skills
+      parameters:
+      - name: name
+        in: path
+        description: skill name
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        description: The fields to change on the skill.
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SkillPatch'
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SkillDetail'
+        '400':
+          description: refused or invalid request
+          content: *id001
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: skill not found
+          content: *id001
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '500':
+          description: internal error
+          content: *id001
+        '503':
+          description: daemon unavailable
+          content: *id001
+      security:
+      - bearerAuth: []
+      - cookieAuth: []
+    delete:
+      operationId: deleteSkill
+      summary: Delete a skill
+      description: 'Deletes one skill (operator-only; adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.'
+      tags:
+      - skills
+      parameters:
+      - name: name
+        in: path
+        description: skill name
+        required: true
+        schema:
+          type: string
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageResponse'
+        '400':
+          description: refused (owned by a source file / missing key) or invalid request
+          content: *id001
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
@@ -3629,6 +4367,13 @@ components:
           type: string
       required:
       - id
+    MessageResponse:
+      description: A confirmation message.
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
     DeleteConversationResponse:
       description: Confirmation that a conversation and its journal were removed.
       type: object
@@ -4542,6 +5287,141 @@ components:
           type: string
         seen:
           type: boolean
+    AgentDefinition:
+      description: 'The composable bundle an agent is made of (adr/agents-concept.md A3): its role, skills, self-model and reflection. Used as the create body.'
+      type: object
+      required: [name]
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: Display name of the agent; required.
+        role:
+          type: string
+          description: 'Role the agent runs as — a name from GET /roles. Empty resolves to the default role when the agent runs.'
+        skills:
+          type: array
+          items:
+            type: string
+          description: Skill names attached to the agent.
+        self_model:
+          type: object
+          additionalProperties: true
+          description: Free-form JSON self-model source for the agent.
+        reflection:
+          type: object
+          additionalProperties: true
+          description: Free-form JSON self-reflection configuration for the agent.
+    AgentPatch:
+      description: 'An edit of one agent definition; only the fields present are changed. skills, self_model and reflection take JSON values — an empty array or object clears the field.'
+      type: object
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+          description: New display name; must be non-empty.
+        role:
+          type: string
+          description: New role name from GET /roles.
+        skills:
+          type: array
+          items:
+            type: string
+          description: Replacement skill list.
+        self_model:
+          type: object
+          additionalProperties: true
+          description: Replacement self-model source.
+        reflection:
+          type: object
+          additionalProperties: true
+          description: Replacement reflection configuration.
+    Agent:
+      description: One stored agent definition with its identity and current version (adr/agents-concept.md A5; definitions are versioned, Q14).
+      type: object
+      required: [id, version, status, definition, created_at, updated_at]
+      properties:
+        id:
+          type: string
+          description: agent_<hex>
+        version:
+          type: integer
+          minimum: 1
+          description: Bumped on every update.
+        status:
+          type: string
+          enum: [active, staged]
+          description: 'staged is an imported agent awaiting approval (Q30); agent run refuses it.'
+        definition:
+          $ref: '#/components/schemas/AgentDefinition'
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AgentRunRequest:
+      description: Options for running an agent.
+      type: object
+      properties:
+        interactive:
+          type: boolean
+          default: false
+          description: Marks the new conversation HITL-eligible.
+    AgentRunResult:
+      description: The result of running an agent — the conversation it opened.
+      type: object
+      required: [agent_id, conversation_id]
+      properties:
+        agent_id:
+          type: string
+          description: The stored agent that was run.
+        conversation_id:
+          type: string
+          description: The new conversation's id — attach or send turns to it.
+        role:
+          type: string
+          description: The role the new conversation resolved to.
+    AgentImportRequest:
+      description: A bundle to import — a tar holding agent.json, base64-encoded (adr/agents-concept.md Q6).
+      type: object
+      required: [tar_base64]
+      properties:
+        tar_base64:
+          type: string
+          description: The bundle tar, base64-encoded.
+    AgentExportResult:
+      description: An exported agent bundle — a tar holding agent.json, base64-encoded.
+      type: object
+      required: [filename, tar_base64]
+      properties:
+        filename:
+          type: string
+          description: Suggested file name for the bundle.
+        tar_base64:
+          type: string
+          description: The bundle tar, base64-encoded.
+    ListAgentsResponse:
+      description: A page of stored agents.
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/Agent'
+        pagination:
+          $ref: '#/components/schemas/Pagination'
+    AgentDeleteResponse:
+      description: Confirmation that the agent and its version history were deleted.
+      type: object
+      required: [id, deleted]
+      properties:
+        id:
+          type: string
+          description: The agent id that was deleted.
+        deleted:
+          type: boolean
+          description: Whether a row was actually removed.
     ListBoardTasksResponse:
       description: A page of board tasks.
       type: object
@@ -4579,6 +5459,9 @@ components:
           type: string
           enum: [post, run_agent, detached]
           description: how the task entered the board
+        role:
+          type: string
+          description: 'The leaf role the claiming worker runs the task under (adr/agents-concept.md A6, Q15 — fixed at post time); empty means the worker''s own process role (Q17).'
         priority:
           type: integer
           minimum: 0
@@ -4613,6 +5496,9 @@ components:
           minimum: 0
           maximum: 10
           default: 0
+        role:
+          type: string
+          description: 'Optional leaf role the claiming worker runs the task as; empty leaves the worker''s own role. Unknown or non-leaf roles are refused.'
         posted_by:
           type: string
           description: 'Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1).'
@@ -4628,6 +5514,9 @@ components:
           type: string
         spec:
           type: string
+        role:
+          type: string
+          description: 'Leaf role the claiming worker runs the task as (adr/agents-concept.md A6); empty clears it back to the worker''s own role. Unknown or non-leaf roles are refused.'
         status:
           type: string
           enum: [queued, running, done, failed, cancelled]
@@ -4672,6 +5561,18 @@ components:
         delegates:
           type: boolean
           description: may spawn sub-agents (run_agent/run_agents)
+        leaf:
+          type: boolean
+          description: a delegatable leaf role — a board task may name it as its worker role (adr/agents-concept.md A6, Q16)
+        spawns_goals:
+          type: boolean
+          description: may spawn background pursue sessions
+        persists:
+          type: boolean
+          description: runs as a checkpointing session worker rather than an ephemeral leaf
+        interactive:
+          type: boolean
+          description: HITL-eligible when the caller is interactive
     Pagination:
       description: Which page a list response carries. Paging is offset based; there is no cursor.
       type: object
@@ -4709,6 +5610,17 @@ components:
           type: array
           items:
             type: string
+    PluginInstallRequest:
+      description: 'The plugin''s files: one <name>.toml manifest plus its entrypoint binary and any sidecars, keyed by path relative to the user-plugin dir; values are base64.'
+      type: object
+      required: [files]
+      properties:
+        files:
+          type: object
+          additionalProperties:
+            type: string
+            description: base64-encoded file content
+          description: relpath → base64 content
     ReloadPluginsResponse:
       description: The plugin roster after a reload, with how many loaded and how many failed.
       type: object
@@ -5123,6 +6035,89 @@ components:
       - name
       - source
       - content
+    SkillCreateRequest:
+      description: A new skill — name and Markdown body required.
+      type: object
+      required: [name, content]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+          description: the skill's body, in Markdown
+    SkillPatch:
+      description: 'An update of one skill; only the fields present are changed.'
+      type: object
+      properties:
+        description:
+          type: string
+        tags:
+          type: array
+          items:
+            type: string
+        content:
+          type: string
+    RoleCreateRequest:
+      description: 'A new role: name plus its tool boundary and structural flags. Stored as a catalog skill with a role block (docs/roles.md R-ROLE.1).'
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        all_tools:
+          type: boolean
+          description: true when the role holds every tool; otherwise tools is the strict allowlist
+        tools:
+          type: array
+          items:
+            type: string
+          description: the strict tool allowlist when all_tools is false
+        delegates:
+          type: boolean
+          description: may spawn sub-agents (run_agent/run_agents)
+        spawns_goals:
+          type: boolean
+        persists:
+          type: boolean
+        interactive:
+          type: boolean
+    RolePatch:
+      description: 'An update of one role; only the fields present are changed.'
+      type: object
+      properties:
+        description:
+          type: string
+        all_tools:
+          type: boolean
+        tools:
+          type: array
+          items:
+            type: string
+        delegates:
+          type: boolean
+        spawns_goals:
+          type: boolean
+        persists:
+          type: boolean
+        interactive:
+          type: boolean
+    MemorySetRequest:
+      description: One key of the key-value memory and its value.
+      type: object
+      required: [key, value]
+      properties:
+        key:
+          type: string
+        value:
+          type: string
     CancelTurnResponse:
       description: Whether a running turn was cancelled.
       type: object

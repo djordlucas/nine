@@ -589,7 +589,7 @@ func TestDaemonPluginCallReachesCoreTools(t *testing.T) {
 		t.Fatalf("SkillUpsert: %v", err)
 	}
 	core := agent.New()
-	agent.RegisterSkillTools(core, store, nil)
+	agent.RegisterSkillTools(core, store, nil, nil)
 
 	d, sock := startDaemon(t, makeFactory(seqProvider(nil)), nil, nil)
 	d.ConfigureCoreTools(core)
@@ -709,7 +709,7 @@ func (m *mockGoalStore) GoalList() ([]memory.Goal, error)                   { re
 func (m *mockGoalStore) WorkflowList(_ string) ([]workflow.Workflow, error) { return nil, nil }
 func (m *mockGoalStore) WorkflowCancel(_ string) (int, error)               { return 0, nil }
 func (m *mockGoalStore) WorkflowFail(_ string, _ bool) (int, error)         { return 0, nil }
-func (m *mockGoalStore) BoardTaskCreate(_, _, _, _ string, _, _ int) (memory.BoardTask, error) {
+func (m *mockGoalStore) BoardTaskCreate(_, _, _, _, _ string, _, _ int) (memory.BoardTask, error) {
 	return memory.BoardTask{}, nil
 }
 func (m *mockGoalStore) BoardTaskList(_ string, _, _ int) ([]memory.BoardTask, error) { return nil, nil }
@@ -720,6 +720,26 @@ func (m *mockGoalStore) BoardTaskUpdate(_ string, _ memory.BoardTaskPatch) (memo
 	return memory.BoardTask{}, false, nil
 }
 func (m *mockGoalStore) BoardTaskDelete(_ string) (bool, error) { return false, nil }
+
+// Agent verbs: inert, so this mock still satisfies queryBackend.
+func (m *mockGoalStore) AgentList() ([]memory.Agent, error) { return nil, nil }
+func (m *mockGoalStore) AgentGet(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockGoalStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
+func (m *mockGoalStore) AgentCreateWithStatus(_, _, _, _, _, _ string) (memory.Agent, error) {
+	return memory.Agent{}, nil
+}
+func (m *mockGoalStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
+func (m *mockGoalStore) AgentDelete(string) (bool, error)                  { return false, nil }
+func (m *mockGoalStore) AgentVersions(string) ([]memory.AgentVersion, error) { return nil, nil }
+func (m *mockGoalStore) AgentApprove(string) (memory.Agent, bool, error) {
+	return memory.Agent{}, false, nil
+}
 
 func (m *mockGoalStore) UserNotificationList(_ bool) ([]memory.UserNotification, error) {
 	return nil, nil
@@ -764,6 +784,8 @@ func (m *mockGoalStore) SkillGet(string) (memory.Skill, bool, error) {
 }
 func (m *mockGoalStore) BackupTo(string) (string, error)    { return "", nil }
 func (m *mockGoalStore) SkillList() ([]memory.Skill, error) { return nil, nil }
+func (m *mockGoalStore) SkillUpsert(memory.Skill) error      { return nil }
+func (m *mockGoalStore) SkillDelete(string) error             { return nil }
 
 // A condition trigger wakes a session with a turn nobody waits on. Its reply must
 // not block the worker: the session has to answer the next turn, and stop.

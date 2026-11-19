@@ -388,3 +388,164 @@ func (d *Daemon) watch(ctx context.Context, conn net.Conn, enc *json.Encoder, ag
 		}
 	}
 }
+
+// --- operator skill/memory writes (adr/agents-concept.md A8, Q23) ---
+//
+// The REST write endpoints reach the same store rows the model's
+// skill_write/skill_modify tools write — one store, two front doors. The
+// same rules apply: a built-in or user skill is owned by its source file and
+// is refused; writes land as agent-source rows.
+
+func skillDetailJSON(sk memory.Skill) string {
+	tags := sk.Tags
+	if tags == nil {
+		tags = []string{}
+	}
+	data, _ := json.Marshal(protocol.SkillDetail{
+		SkillInfo: protocol.SkillInfo{Name: sk.Name, Description: sk.Description, Tags: tags, Source: sk.Source},
+		Content:   sk.Content,
+	})
+	return string(data)
+}
+
+// handleSkillCreate writes a new skill for the operator (the Builder UI's
+// create). An existing immutable-source skill of the same name is refused.
+func (d *Daemon) handleSkillCreate(enc *json.Encoder, r protocol.SkillCreateReq) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("skills not available")) //nolint:errcheck
+		return
+	}
+	name := strings.TrimSpace(r.Name)
+	if name == "" {
+		enc.Encode(protocol.NewErrorMsg("skill_create: name is required")) //nolint:errcheck
+		return
+	}
+	if existing, found, err := d.store.SkillGet(name); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	} else if found && memory.SkillSourceImmutable(existing.Source) {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %q is a %s skill and cannot be overwritten; it is owned by its source file", name, existing.Source))) //nolint:errcheck
+		return
+	}
+	sk := memory.Skill{
+		Name: name, Description: r.Description, Tags: r.Tags, Content: r.Content,
+		Source: memory.SkillSourceAgent,
+	}
+	if err := d.store.SkillUpsert(sk); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSkillCreate, skillDetailJSON(sk))) //nolint:errcheck
+}
+
+// handleSkillUpdate patches one skill, merging like skill_modify: only the
+// fields present change. Immutable-source skills are refused.
+func (d *Daemon) handleSkillUpdate(enc *json.Encoder, id string, payload map[string]json.RawMessage) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("skills not available")) //nolint:errcheck
+		return
+	}
+	existing, found, err := d.store.SkillGet(id)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if !found {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %q not found", id))) //nolint:errcheck
+		return
+	}
+	if memory.SkillSourceImmutable(existing.Source) {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %q is a %s skill and cannot be modified; it is owned by its source file", id, existing.Source))) //nolint:errcheck
+		return
+	}
+	for k, v := range payload {
+		switch k {
+		case "description":
+			_ = json.Unmarshal(v, &existing.Description)
+		case "tags":
+			var tags []string
+			if json.Unmarshal(v, &tags) == nil {
+				existing.Tags = tags
+			}
+		case "content":
+			_ = json.Unmarshal(v, &existing.Content)
+		}
+	}
+	existing.Source = memory.SkillSourceAgent
+	if err := d.store.SkillUpsert(existing); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSkillUpdate, skillDetailJSON(existing))) //nolint:errcheck
+}
+
+// handleSkillDelete removes one skill; immutable-source skills are refused.
+func (d *Daemon) handleSkillDelete(enc *json.Encoder, id string) {
+	if d.store == nil {
+		enc.Encode(protocol.NewErrorMsg("skills not available")) //nolint:errcheck
+		return
+	}
+	existing, found, err := d.store.SkillGet(id)
+	if err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	if !found {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %q not found", id))) //nolint:errcheck
+		return
+	}
+	if memory.SkillSourceImmutable(existing.Source) {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("skill %q is a %s skill and cannot be deleted; it is owned by its source file", id, existing.Source))) //nolint:errcheck
+		return
+	}
+	if err := d.store.SkillDelete(id); err != nil {
+		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeSkillDelete, "deleted "+id)) //nolint:errcheck
+}
+
+// kvWriter is the store's key-value write, which the operator memory writes
+// need and queryBackend leaves out.
+type kvWriter interface {
+	Set(key, value string) error
+	Delete(key string) error
+}
+
+// handleMemorySet sets one key of the key-value memory for the operator.
+func (d *Daemon) handleMemorySet(enc *json.Encoder, key, value string) {
+	kv, ok := d.store.(kvWriter)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("memory not available")) //nolint:errcheck
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		enc.Encode(protocol.NewErrorMsg("memory_set: key is required")) //nolint:errcheck
+		return
+	}
+	if err := kv.Set(key, value); err != nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("set memory: %v", err))) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeMemorySet, "ok")) //nolint:errcheck
+}
+
+// handleMemoryDelete deletes one key of the key-value memory for the operator.
+func (d *Daemon) handleMemoryDelete(enc *json.Encoder, key string) {
+	kv, ok := d.store.(kvWriter)
+	if !ok {
+		enc.Encode(protocol.NewErrorMsg("memory not available")) //nolint:errcheck
+		return
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		enc.Encode(protocol.NewErrorMsg("memory_delete: key is required")) //nolint:errcheck
+		return
+	}
+	if err := kv.Delete(key); err != nil {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("delete memory: %v", err))) //nolint:errcheck
+		return
+	}
+	enc.Encode(protocol.NewTextMsg(protocol.TypeMemoryDelete, "deleted "+key)) //nolint:errcheck
+}

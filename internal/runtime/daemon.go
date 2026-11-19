@@ -51,6 +51,10 @@ type RoleParams struct {
 	// Delegates opts a standing agent into sub-agent fan-out; OR-ed with the
 	// resolved role's own Delegates flag (adr/predefined-agents-design.md §3.1).
 	Delegates bool
+	// AgentID names the stored agent the session was run from, '' for a directly
+	// created conversation. The builder resolves the agent's bundle (skills,
+	// self-model) from it (adr/agents-concept.md A3).
+	AgentID string
 }
 
 // CheckpointStore persists and retrieves serialised loop state keyed by agent ID.
@@ -83,6 +87,10 @@ type queryBackend interface {
 	GoalUpdateStatus(id, status string) error
 	SkillList() ([]memory.Skill, error)
 	SkillGet(name string) (memory.Skill, bool, error)
+	// Skill write backs the operator REST verbs (adr/agents-concept.md A8,
+	// Q23) — the same store rows the model's skill_write/skill_modify write.
+	SkillUpsert(sk memory.Skill) error
+	SkillDelete(name string) error
 	// BackupTo writes a consistent snapshot of the store (the backup message).
 	BackupTo(path string) (string, error)
 	WorkflowList(agentID string) ([]workflow.Workflow, error)
@@ -115,13 +123,23 @@ type queryBackend interface {
 	QueueMessage(agentID, message string) error
 	// Board operator CRUD backs the board_* wire verbs
 	// (adr/orchestrator-board.md §2.6).
-	BoardTaskCreate(title, spec, postedBy, source string, priority, depth int) (memory.BoardTask, error)
+	BoardTaskCreate(title, spec, postedBy, source, role string, priority, depth int) (memory.BoardTask, error)
 	BoardTaskList(status string, limit, offset int) ([]memory.BoardTask, error)
 	BoardTaskGet(id string) (memory.BoardTask, bool, error)
 	BoardTaskUpdate(id string, p memory.BoardTaskPatch) (memory.BoardTask, bool, error)
 	BoardTaskDelete(id string) (bool, error)
 	UnconsumedMessagesCount(agentID string) (int, error)
 	DrainQueuedMessage(agentID string) (string, error)
+	// Stored agent definitions back the agent_* wire verbs
+	// (adr/agents-concept.md A5).
+	AgentList() ([]memory.Agent, error)
+	AgentGet(id string) (memory.Agent, bool, error)
+	AgentCreate(name, role, skills, selfModel, reflection string) (memory.Agent, error)
+	AgentCreateWithStatus(name, role, skills, selfModel, reflection, status string) (memory.Agent, error)
+	AgentUpdate(id string, p memory.AgentPatch) (memory.Agent, bool, error)
+	AgentDelete(id string) (bool, error)
+	AgentVersions(id string) ([]memory.AgentVersion, error)
+	AgentApprove(id string) (memory.Agent, bool, error)
 }
 
 // pluginRegistry provides the plugin access needed by message handlers.
@@ -130,6 +148,9 @@ type pluginRegistry interface {
 	Running() []*plugin.Plugin
 	Call(ctx context.Context, p *plugin.Plugin, toolName string, args json.RawMessage) (plugin.CallResult, error)
 	ReloadUserPlugins()
+	// InstallUserPlugin stages, vets and lands a plugin's files into the user
+	// dir, then reloads (adr/agents-concept.md A7) — operator-only.
+	InstallUserPlugin(files map[string][]byte) (string, error)
 	UserStatus() []plugin.UserPluginStatus
 	// DisabledSkipped names default plugins that config switched off. They are
 	// in neither Running() nor UserStatus(), so the roster needs them from here
@@ -163,8 +184,15 @@ type Daemon struct {
 	grants *CapabilityService
 	core   *agent.Dispatcher // core-intercepted tools, for plugin_call (see ConfigureCoreTools)
 	store  queryBackend
-	hitl   *HITL
-	sink   EventSink // durable session-event journal for new workers (nil = disabled)
+	// registry is the cross-agent store when store is an agentStoreRouter
+	// (adr/agents-concept.md A4): journaling and anything needing the concrete
+	// *memory.Store go here.
+	registry *memory.Store
+	// roles validates task-named roles on the operator board path
+	// (adr/agents-concept.md A6); nil when no registry is wired.
+	roles *RoleRegistry
+	hitl     *HITL
+	sink     EventSink // durable session-event journal for new workers (nil = disabled)
 
 	maxRunning int // see SetMaxRunning
 	// workspaceRoot is [workspace].root (ConfigureWorkspace).
@@ -592,11 +620,30 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 	case protocol.BoardGetReq:
 		d.handleBoardGet(enc, r.ID)
 	case protocol.BoardCreateReq:
-		d.handleBoardCreate(enc, r.Title, r.Spec, r.Priority, r.PostedBy)
+		d.handleBoardCreate(enc, r.Title, r.Spec, r.Role, r.Priority, r.PostedBy)
 	case protocol.BoardUpdateReq:
 		d.handleBoardUpdate(enc, r.ID, r.Patch)
 	case protocol.BoardDeleteReq:
 		d.handleBoardDelete(enc, r.ID)
+
+	case protocol.AgentListReq:
+		d.handleAgentList(enc)
+	case protocol.AgentGetReq:
+		d.handleAgentGet(enc, r.ID)
+	case protocol.AgentCreateReq:
+		d.handleAgentCreate(enc, r.Definition)
+	case protocol.AgentUpdateReq:
+		d.handleAgentUpdate(enc, r.ID, r.Patch)
+	case protocol.AgentDeleteReq:
+		d.handleAgentDelete(enc, r.ID)
+	case protocol.AgentRunReq:
+		d.handleAgentRun(enc, r.ID, r.Interactive)
+	case protocol.AgentExportReq:
+		d.handleAgentExport(enc, r.ID)
+	case protocol.AgentImportReq:
+		d.handleAgentImport(enc, r.Bundle)
+	case protocol.AgentApproveReq:
+		d.handleAgentApprove(enc, r.ID)
 
 	case protocol.RolesListReq:
 		d.handleRolesList(enc)
@@ -652,8 +699,18 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 
 	case protocol.SkillGetReq:
 		d.handleSkillGet(enc, r.Name)
+	case protocol.SkillCreateReq:
+		d.handleSkillCreate(enc, r)
+	case protocol.SkillUpdateReq:
+		d.handleSkillUpdate(enc, r.ID, r.Patch)
+	case protocol.SkillDeleteReq:
+		d.handleSkillDelete(enc, r.ID)
 	case protocol.MemoryGetReq:
 		d.handleMemoryGet(enc, r.Key)
+	case protocol.MemorySetReq:
+		d.handleMemorySet(enc, r.Key, r.Value)
+	case protocol.MemoryDeleteReq:
+		d.handleMemoryDelete(enc, r.Key)
 
 	case protocol.BackupReq:
 		d.handleBackup(enc, r)
@@ -705,6 +762,12 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 			d.handlePluginsList(enc)
 		case protocol.TypePluginsReload:
 			d.handlePluginsReload(enc)
+		case protocol.TypePluginInstall:
+			if r, ok := req.(protocol.PluginInstallReq); ok {
+				d.handlePluginInstall(enc, r.Files)
+			} else {
+				enc.Encode(protocol.NewErrorMsg("bad plugin_install request")) //nolint:errcheck
+			}
 		case protocol.TypeSessionsList:
 			d.handleSessionsList(enc)
 		case protocol.TypeProcessList:
@@ -725,9 +788,19 @@ func (d *Daemon) dispatch(ctx context.Context, conn net.Conn, enc *json.Encoder,
 }
 
 // ConfigureMemory stores the memory backend used by goal, reflection, and workflow handlers.
+// When the backend is an agentStoreRouter (per-agent layout, adr/agents-concept.md
+// A4), the registry store is kept aside for the concrete-*memory.Store call sites.
 func (d *Daemon) ConfigureMemory(store queryBackend) {
 	d.store = store
+	if r, ok := store.(interface{ RegistryStore() *memory.Store }); ok {
+		d.registry = r.RegistryStore()
+	}
 }
+
+// ConfigureRoles wires the role registry so operator board writes can admit a
+// task-named role the same way board_post does (adr/agents-concept.md A6,
+// Q16/Q18).
+func (d *Daemon) ConfigureRoles(r *RoleRegistry) { d.roles = r }
 
 // ConfigureHITL wires the human-in-the-loop coordinator used to route
 // human_input_answer messages and resolve session interactivity on attach.

@@ -83,6 +83,16 @@ restarts. See [Agent Loop § Checkpointing](agent-loop.md#checkpointing).
 API. Status `active` (a client connected) or `archived` (disconnected,
 resumable by attaching again).
 
+**Agent** — A named, stored bundle of role, skills, self-model and reflection
+that an operator composes (`nine agent create`, `POST /api/v1/agents`) and
+runs (`nine agent run <id>`, `POST /api/v1/agents/{id}/run`), which opens a
+**conversation** running as that agent. An agent exports as a bundle tar
+(`nine agent export`, `GET /api/v1/agents/{id}/export`) and imports staged
+(`nine agent import`, `POST /api/v1/agents/import`) — staged agents cannot run
+until approved (`nine agent approve`). A conversation run from an agent sees
+only that agent's skills and self-model. Distinct from the conversation (the
+interactive thread itself) and from the internal `AgentWorker` that drives one.
+
 **Work unit** — Nine has two fundamental units: a **session** (an agent loop —
 conversation, goal-pursue, reflection, or sub-agent) and a **tool call** (the
 atom, issued within a turn). Finite work is a sub-agent (transient), a workflow
@@ -206,7 +216,11 @@ Nine's persistent state — *not* a plugin subprocess. Opens a file
 (`[memory].path`, default `~/.nine/nine.db`), creating it if absent, fails fast if
 it is unusable, and is the sole owner of the database handles (the "single
 gateway" invariant — a one-connection writer pool plus a read-only pool, since
-SQLite serializes writes). Agent-facing K/V (`memory_get/set/delete/list`), file storage
+SQLite serializes writes). Since the agents concept (adr/agents-concept.md A4),
+`[memory].path` is the **registry** db (processes, board, agent definitions, skills
+catalog, session index); each agent's own state lives in its own db at
+`agents/<agentID>.db` beside it, opened lazily and LRU-capped
+(`[memory] max_open_agents`, default 32). Agent-facing K/V (`memory_get/set/delete/list`), file storage
 (`file_search_text`, `list_files`), and (core-intercepted) vector ops
 (`memory_embed`/`memory_query`) are exposed as tools.
 Operational tables (`conversations`, `goals`, `notifications`,
@@ -462,13 +476,15 @@ have. The dispatcher's output cap is the one place still counting 4 bytes to the
 token (2048 tokens ⇒ 8192 characters), because it bounds a result rather than a
 request.
 
-**Volume layout (`/data/`)** — Holds `nine.db` (the SQLite database, plus its
-`-wal`/`-shm` sidecars) and `workspace/` (the file tools' workspace). All primary
+**Volume layout (`/data/`)** — Holds `nine.db` (the registry SQLite database, plus
+its `-wal`/`-shm` sidecars), `agents/` (one `<agentID>.db` per stored agent, plus
+sidecars), and `workspace/` (the file tools' workspace). All primary
 state is therefore on one volume. The `nine` binary (with built-in skills
 embedded) and plugins are immutable image content under `/opt/nine`.
 
-**`path` (`[memory].path` / `NINE_DB_PATH`)** — The SQLite database file the
-daemon opens, creating it and its parent directory if absent. Defaults to
+**`path` (`[memory].path` / `NINE_DB_PATH`)** — The registry SQLite database file
+the daemon opens, creating it and its parent directory if absent. Per-agent
+databases live in the `agents/` directory beside it. Defaults to
 `/data/nine.db` when the container's `/data` volume is present, else
 `~/.nine/nine.db`. The daemon fails fast if the file cannot be opened.
 
@@ -485,6 +501,10 @@ plugins (and tool counts).
 **`nine goals` / `nine reflections` / `nine workflows`** —
 List goals (with their sub-goals), self-reflection history,
 and active/recent workflows respectively. (There is no `tasks` verb.)
+
+**`nine agent …`** — List, show, create, edit and delete stored **agents**;
+`nine agent run <id>` opens a conversation from the agent; `export`/`import`/
+`approve` move agent bundles in and out (imported agents land staged).
 
 **`nine workflow stop <id>`** — Live cancellation of an ongoing workflow
 (daemon must be running): marks it `cancelled`, pending steps `skipped`,

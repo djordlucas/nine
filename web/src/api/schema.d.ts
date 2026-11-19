@@ -84,9 +84,17 @@ export interface paths {
          * @description One key of the key-value memory with its value. Read-only.
          */
         get: operations["getMemoryValue"];
-        put?: never;
+        /**
+         * Set one memory key
+         * @description Writes one key of the key-value memory (operator-only; adr/agents-concept.md A8). The same store row memory_set writes in a turn.
+         */
+        put: operations["setMemoryValue"];
         post?: never;
-        delete?: never;
+        /**
+         * Delete one memory key
+         * @description Deletes one key of the key-value memory (operator-only; adr/agents-concept.md A8).
+         */
+        delete: operations["deleteMemoryValue"];
         options?: never;
         head?: never;
         patch?: never;
@@ -772,6 +780,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/plugins/install": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Install a plugin into the running daemon
+         * @description Operator-only (adr/agents-concept.md A7, Q20 — never exposed to models). Takes the plugin's files — one <name>.toml manifest plus its entrypoint and any sidecars, keyed by path relative to [plugins].user_dir, values base64 — vets them (disabled list, MCP handshake, tool collision), lands them in the user dir and reloads, so the plugin's tools reach running sessions from their next turn (Q32). Nothing is overwritten: an existing file is a 400 refusal.
+         */
+        post: operations["installPlugin"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/processes": {
         parameters: {
             query?: never;
@@ -924,6 +952,138 @@ export interface paths {
         patch: operations["updateBoardTask"];
         trace?: never;
     };
+    "/agents": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List agents
+         * @description Returns every stored agent definition — the composable bundles (role, skills, self-model, reflection) that POST /agents builds and POST /agents/{id}/run starts (adr/agents-concept.md A5) — oldest first.
+         */
+        get: operations["listAgents"];
+        put?: never;
+        /**
+         * Compose an agent
+         * @description Creates a stored agent definition (adr/agents-concept.md A5). The name is required; role names a role from GET /roles, empty resolving to the default role when the agent runs. Every later change is recorded as a new version (Q14).
+         */
+        post: operations["createAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get an agent
+         * @description Returns one stored agent definition in full, with its current version.
+         */
+        get: operations["getAgent"];
+        put?: never;
+        post?: never;
+        /**
+         * Delete an agent
+         * @description Deletes one stored agent definition and its version history. Running conversations opened from it are unaffected.
+         */
+        delete: operations["deleteAgent"];
+        options?: never;
+        head?: never;
+        /**
+         * Update an agent
+         * @description Changes one stored agent definition; only the fields present are changed. Each update bumps the version and records it (adr/agents-concept.md Q14).
+         */
+        patch: operations["updateAgent"];
+        trace?: never;
+    };
+    "/agents/{id}/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run an agent
+         * @description Starts a conversation from the stored agent — the agent's role names the new conversation's role, no new session kind (adr/agents-concept.md Q12). Returns the conversation id to talk to.
+         */
+        post: operations["runAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/import": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Import an agent bundle
+         * @description Imports a bundle tar (adr/agents-concept.md Q6 — manifest only until phase 3 adds the database). The agent is created **staged** and cannot run until approved via POST /agents/{id}/approve (Q30); the import is journaled.
+         */
+        post: operations["importAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/export": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Export an agent as a bundle
+         * @description Returns the agent's bundle — a tar holding agent.json with the definition (name, role, skills, self-model, reflection; adr/agents-concept.md Q6) — as base64. Phase 3 adds the agent's database as agent.db in the same tar.
+         */
+        get: operations["exportAgent"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/agents/{id}/approve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve a staged agent
+         * @description Moves an imported (staged) agent to active so it can run (adr/agents-concept.md Q30). The approval is journaled. Already-active agents pass through unchanged.
+         */
+        post: operations["approveAgent"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/roles": {
         parameters: {
             query?: never;
@@ -937,11 +1097,39 @@ export interface paths {
          */
         get: operations["listRoles"];
         put?: never;
-        post?: never;
+        /**
+         * Create a role
+         * @description Creates a role as a catalog skill with a role block (operator-only; adr/agents-concept.md A8, Q23 — roles are skills, one store, two front doors). Refused when a builtin or user skill of the name exists.
+         */
+        post: operations["createRole"];
         delete?: never;
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/roles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete a role
+         * @description Deletes one role (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.
+         */
+        delete: operations["deleteRole"];
+        options?: never;
+        head?: never;
+        /**
+         * Update a role
+         * @description Patches one role's definition (operator-only; adr/agents-concept.md A8, Q23). Builtin and user roles are refused: they are owned by their source file.
+         */
+        patch: operations["updateRole"];
         trace?: never;
     };
     "/questions": {
@@ -997,7 +1185,11 @@ export interface paths {
          */
         get: operations["listSkills"];
         put?: never;
-        post?: never;
+        /**
+         * Create a skill
+         * @description Writes a new skill into the catalog (operator-only; adr/agents-concept.md A8, Q23 — the model's skill_write calls the same store layer). Refused when a builtin or user skill of the name exists: those are owned by their source file.
+         */
+        post: operations["createSkill"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1078,10 +1270,18 @@ export interface paths {
         get: operations["getSkill"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete a skill
+         * @description Deletes one skill (operator-only; adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.
+         */
+        delete: operations["deleteSkill"];
         options?: never;
         head?: never;
-        patch?: never;
+        /**
+         * Update a skill
+         * @description Patches one skill; only the fields present change (like the model's skill_modify, same store layer — adr/agents-concept.md A8, Q23). Builtin and user skills are refused: they are owned by their source file.
+         */
+        patch: operations["updateSkill"];
         trace?: never;
     };
     "/tools": {
@@ -1479,6 +1679,10 @@ export interface components {
             id: string;
             instance_name?: string;
             role?: string;
+        };
+        /** @description A confirmation message. */
+        MessageResponse: {
+            message: string;
         };
         /** @description Confirmation that a conversation and its journal were removed. */
         DeleteConversationResponse: {
@@ -1935,6 +2139,98 @@ export interface components {
             message?: string;
             seen?: boolean;
         };
+        /** @description The composable bundle an agent is made of (adr/agents-concept.md A3): its role, skills, self-model and reflection. Used as the create body. */
+        AgentDefinition: {
+            /** @description Display name of the agent; required. */
+            name: string;
+            /** @description Role the agent runs as — a name from GET /roles. Empty resolves to the default role when the agent runs. */
+            role?: string;
+            /** @description Skill names attached to the agent. */
+            skills?: string[];
+            /** @description Free-form JSON self-model source for the agent. */
+            self_model?: {
+                [key: string]: unknown;
+            };
+            /** @description Free-form JSON self-reflection configuration for the agent. */
+            reflection?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description An edit of one agent definition; only the fields present are changed. skills, self_model and reflection take JSON values — an empty array or object clears the field. */
+        AgentPatch: {
+            /** @description New display name; must be non-empty. */
+            name?: string;
+            /** @description New role name from GET /roles. */
+            role?: string;
+            /** @description Replacement skill list. */
+            skills?: string[];
+            /** @description Replacement self-model source. */
+            self_model?: {
+                [key: string]: unknown;
+            };
+            /** @description Replacement reflection configuration. */
+            reflection?: {
+                [key: string]: unknown;
+            };
+        };
+        /** @description One stored agent definition with its identity and current version (adr/agents-concept.md A5; definitions are versioned, Q14). */
+        Agent: {
+            /** @description agent_<hex> */
+            id: string;
+            /** @description Bumped on every update. */
+            version: number;
+            /**
+             * @description staged is an imported agent awaiting approval (Q30); agent run refuses it.
+             * @enum {string}
+             */
+            status: "active" | "staged";
+            definition: components["schemas"]["AgentDefinition"];
+            /** Format: date-time */
+            created_at: string;
+            /** Format: date-time */
+            updated_at: string;
+        };
+        /** @description Options for running an agent. */
+        AgentRunRequest: {
+            /**
+             * @description Marks the new conversation HITL-eligible.
+             * @default false
+             */
+            interactive: boolean;
+        };
+        /** @description The result of running an agent — the conversation it opened. */
+        AgentRunResult: {
+            /** @description The stored agent that was run. */
+            agent_id: string;
+            /** @description The new conversation's id — attach or send turns to it. */
+            conversation_id: string;
+            /** @description The role the new conversation resolved to. */
+            role?: string;
+        };
+        /** @description A bundle to import — a tar holding agent.json, base64-encoded (adr/agents-concept.md Q6). */
+        AgentImportRequest: {
+            /** @description The bundle tar, base64-encoded. */
+            tar_base64: string;
+        };
+        /** @description An exported agent bundle — a tar holding agent.json, base64-encoded. */
+        AgentExportResult: {
+            /** @description Suggested file name for the bundle. */
+            filename: string;
+            /** @description The bundle tar, base64-encoded. */
+            tar_base64: string;
+        };
+        /** @description A page of stored agents. */
+        ListAgentsResponse: {
+            data?: components["schemas"]["Agent"][];
+            pagination?: components["schemas"]["Pagination"];
+        };
+        /** @description Confirmation that the agent and its version history were deleted. */
+        AgentDeleteResponse: {
+            /** @description The agent id that was deleted. */
+            id: string;
+            /** @description Whether a row was actually removed. */
+            deleted: boolean;
+        };
         /** @description A page of board tasks. */
         ListBoardTasksResponse: {
             data?: components["schemas"]["BoardTask"][];
@@ -1958,6 +2254,8 @@ export interface components {
              * @enum {string}
              */
             source: "post" | "run_agent" | "detached";
+            /** @description The leaf role the claiming worker runs the task under (adr/agents-concept.md A6, Q15 — fixed at post time); empty means the worker's own process role (Q17). */
+            role?: string;
             /**
              * @description higher is claimed first; FIFO within a priority
              * @default 0
@@ -1979,6 +2277,8 @@ export interface components {
             spec?: string;
             /** @default 0 */
             priority: number;
+            /** @description Optional leaf role the claiming worker runs the task as; empty leaves the worker's own role. Unknown or non-leaf roles are refused. */
+            role?: string;
             /** @description Optional conversation (session id) whose board this task belongs to; defaults to "operator". The board is one shared queue namespaced by posted_by (adr/orchestrator-board.md §2.1). */
             posted_by?: string;
         };
@@ -1987,6 +2287,8 @@ export interface components {
             priority?: number;
             title?: string;
             spec?: string;
+            /** @description Leaf role the claiming worker runs the task as (adr/agents-concept.md A6); empty clears it back to the worker's own role. Unknown or non-leaf roles are refused. */
+            role?: string;
             /** @enum {string} */
             status?: "queued" | "running" | "done" | "failed" | "cancelled";
             result?: string;
@@ -2011,6 +2313,14 @@ export interface components {
             tools?: string[];
             /** @description may spawn sub-agents (run_agent/run_agents) */
             delegates?: boolean;
+            /** @description a delegatable leaf role — a board task may name it as its worker role (adr/agents-concept.md A6, Q16) */
+            leaf?: boolean;
+            /** @description may spawn background pursue sessions */
+            spawns_goals?: boolean;
+            /** @description runs as a checkpointing session worker rather than an ephemeral leaf */
+            persists?: boolean;
+            /** @description HITL-eligible when the caller is interactive */
+            interactive?: boolean;
         };
         /** @description Which page a list response carries. Paging is offset based; there is no cursor. */
         Pagination: {
@@ -2028,6 +2338,13 @@ export interface components {
             /** @description builtin, user */
             source?: string;
             tools?: string[];
+        };
+        /** @description The plugin's files: one <name>.toml manifest plus its entrypoint binary and any sidecars, keyed by path relative to the user-plugin dir; values are base64. */
+        PluginInstallRequest: {
+            /** @description relpath → base64 content */
+            files: {
+                [key: string]: string;
+            };
         };
         /** @description The plugin roster after a reload, with how many loaded and how many failed. */
         ReloadPluginsResponse: {
@@ -2239,6 +2556,49 @@ export interface components {
             source: "builtin" | "user" | "agent";
             /** @description the skill's body, in Markdown */
             content: string;
+        };
+        /** @description A new skill — name and Markdown body required. */
+        SkillCreateRequest: {
+            name: string;
+            description?: string;
+            tags?: string[];
+            /** @description the skill's body, in Markdown */
+            content: string;
+        };
+        /** @description An update of one skill; only the fields present are changed. */
+        SkillPatch: {
+            description?: string;
+            tags?: string[];
+            content?: string;
+        };
+        /** @description A new role: name plus its tool boundary and structural flags. Stored as a catalog skill with a role block (docs/roles.md R-ROLE.1). */
+        RoleCreateRequest: {
+            name: string;
+            description?: string;
+            /** @description true when the role holds every tool; otherwise tools is the strict allowlist */
+            all_tools?: boolean;
+            /** @description the strict tool allowlist when all_tools is false */
+            tools?: string[];
+            /** @description may spawn sub-agents (run_agent/run_agents) */
+            delegates?: boolean;
+            spawns_goals?: boolean;
+            persists?: boolean;
+            interactive?: boolean;
+        };
+        /** @description An update of one role; only the fields present are changed. */
+        RolePatch: {
+            description?: string;
+            all_tools?: boolean;
+            tools?: string[];
+            delegates?: boolean;
+            spawns_goals?: boolean;
+            persists?: boolean;
+            interactive?: boolean;
+        };
+        /** @description One key of the key-value memory and its value. */
+        MemorySetRequest: {
+            key: string;
+            value: string;
         };
         /** @description Whether a running turn was cancelled. */
         CancelTurnResponse: {
@@ -2658,6 +3018,121 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemoryValue"];
+                };
+            };
+            /** @description missing key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description no such key */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    setMemoryValue: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The key and value to store. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MemorySetRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MemoryValue"];
+                };
+            };
+            /** @description missing key */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteMemoryValue: {
+        parameters: {
+            query: {
+                /** @description the key, e.g. self/identity */
+                key: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
                 };
             };
             /** @description missing key */
@@ -5180,6 +5655,60 @@ export interface operations {
             };
         };
     };
+    installPlugin: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The plugin's files, base64-encoded, keyed by relative path. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PluginInstallRequest"];
+            };
+        };
+        responses: {
+            /** @description Installed and loaded; the roster shows it. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReloadPluginsResponse"];
+                };
+            };
+            /** @description refused — unsafe path, missing/duplicate manifest, disabled plugin, existing file, not an MCP plugin, or a tool collision */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listProcesses: {
         parameters: {
             query?: {
@@ -5772,6 +6301,508 @@ export interface operations {
             };
         };
     };
+    listAgents: {
+        parameters: {
+            query?: {
+                /** @description Maximum items to return */
+                limit?: number;
+                /** @description Items to skip before the page */
+                offset?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ListAgentsResponse"];
+                };
+            };
+            /** @description invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The agent definition to store. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentDefinition"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (empty name, bad skills JSON) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentDeleteResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (empty name, bad skills JSON) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    runAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        /** @description Run options. */
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["AgentRunRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentRunResult"];
+                };
+            };
+            /** @description refused (unknown role) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    importAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The bundle to import. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AgentImportRequest"];
+            };
+        };
+        responses: {
+            /** @description OK — the staged agent */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            /** @description refused (bad bundle, unknown role) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    exportAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AgentExportResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    approveAgent: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description agent id, as the list shows it (agent_…) */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Agent"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listRoles: {
         parameters: {
             query?: never;
@@ -5791,6 +6822,187 @@ export interface operations {
                 };
             };
             401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    createRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The role to create: name, description, tool boundary (all_tools or tools) and structural flags. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RoleCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleInfo"];
+                };
+            };
+            /** @description refused (empty name, invalid tool list, name owned by a source file) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description role name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description refused (owned by a source file / missing key) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description role not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateRole: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description role name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change on the role. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RolePatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RoleInfo"];
+                };
+            };
+            /** @description refused or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description role not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             429: components["responses"]["TooManyRequests"];
             /** @description internal error */
             500: {
@@ -5969,6 +7181,60 @@ export interface operations {
             };
         };
     };
+    createSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The skill to write: name, description, tags and the Markdown body. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description refused (empty name, name owned by a source file) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     listSpec: {
         parameters: {
             query?: never;
@@ -6102,6 +7368,133 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    deleteSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MessageResponse"];
+                };
+            };
+            /** @description refused (owned by a source file / missing key) or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            /** @description skill not found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            429: components["responses"]["TooManyRequests"];
+            /** @description internal error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description daemon unavailable */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    updateSkill: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                /** @description skill name */
+                name: string;
+            };
+            cookie?: never;
+        };
+        /** @description The fields to change on the skill. */
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SkillPatch"];
+            };
+        };
+        responses: {
+            /** @description OK */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SkillDetail"];
+                };
+            };
+            /** @description refused or invalid request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
             401: components["responses"]["Unauthorized"];

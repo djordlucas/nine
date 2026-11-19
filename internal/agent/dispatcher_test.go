@@ -383,3 +383,55 @@ func TestWireRunAgentsContextPropagated(t *testing.T) {
 		t.Error("context not propagated to run_agents handler")
 	}
 }
+
+// TestRefreshPlugins covers the dispatch half of per-turn live grants
+// (adr/agents-concept.md A7, Q32): RefreshPlugins swaps the plugin-backed
+// handlers to the manager's current roster, honoring the role allowlist, so a
+// tool installed after the loop was built is callable from the next turn and a
+// removed one is gone — between turns, never mid-turn.
+func TestRefreshPlugins(t *testing.T) {
+	root := dispatcherModuleRoot(t)
+	binPath := filepath.Join(t.TempDir(), "testplugin")
+	cmd := exec.Command("go", "build", "-mod=vendor", "-o", binPath, "./internal/plugin/testplugin")
+	cmd.Dir = root
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("build testplugin: %v\n%s", err, out)
+	}
+
+	mgr := plugin.NewManager("")
+	p, err := mgr.Start(binPath)
+	if err != nil {
+		t.Fatalf("start testplugin: %v", err)
+	}
+
+	d := agent.New()
+	if d.Has("echo") {
+		t.Fatal("echo registered before any refresh")
+	}
+
+	// No allow filter: the running plugin's tools register.
+	d.RefreshPlugins(mgr, nil)
+	if !d.Has("echo") {
+		t.Fatal("echo not registered after refresh")
+	}
+
+	// The role allowlist still applies across a refresh (R-ROLE.4 boundary 2):
+	// a plugin tool outside the role's set is never callable.
+	d.RefreshPlugins(mgr, func(name string) bool { return name != "echo" })
+	if d.Has("echo") {
+		t.Fatal("echo stayed registered despite the allowlist")
+	}
+	d.RefreshPlugins(mgr, func(name string) bool { return name == "echo" })
+	if !d.Has("echo") {
+		t.Fatal("echo not re-registered when allowed")
+	}
+
+	// A stopped plugin's tools disappear on the next refresh.
+	if err := mgr.Stop(p); err != nil {
+		t.Fatal(err)
+	}
+	d.RefreshPlugins(mgr, nil)
+	if d.Has("echo") {
+		t.Fatal("echo still registered after the plugin stopped")
+	}
+}

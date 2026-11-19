@@ -17,7 +17,7 @@ func TestSkillWriteEmbedsAndPersists(t *testing.T) {
 	e := embed.EmbedderFunc(func(_ context.Context, _ string) ([]float32, error) {
 		return []float32{1}, nil
 	})
-	agent.RegisterSkillTools(d, store, e)
+	agent.RegisterSkillTools(d, store, e, nil)
 
 	res, err := d.Dispatch(context.Background(), "skill_write",
 		json.RawMessage(`{"name":"s","description":"does stuff","content":"body"}`))
@@ -53,7 +53,7 @@ func TestSkillWriteRefusesBuiltin(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := agent.New()
-	agent.RegisterSkillTools(d, store, nil)
+	agent.RegisterSkillTools(d, store, nil, nil)
 
 	if _, err := d.Dispatch(context.Background(), "skill_write",
 		json.RawMessage(`{"name":"core","description":"x","content":"y"}`)); err == nil {
@@ -73,7 +73,7 @@ func TestSkillWriteAndModifyRefuseUserSkills(t *testing.T) {
 		t.Fatal(err)
 	}
 	d := agent.New()
-	agent.RegisterSkillTools(d, store, nil)
+	agent.RegisterSkillTools(d, store, nil, nil)
 
 	if _, err := d.Dispatch(context.Background(), "skill_write",
 		json.RawMessage(`{"name":"ops-runbook","description":"x","content":"y"}`)); err == nil {

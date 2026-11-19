@@ -105,12 +105,12 @@ function Overview() {
             )}
             <dt>Plugins</dt>
             <dd>
-              <a href="/tools/plugins">{data.plugins?.length ?? 0}</a>
+              <a href="/builder/tools/plugins">{data.plugins?.length ?? 0}</a>
             </dd>
           </dl>
         )}
         <p class="muted">
-          Plugins and skills are under <a href="/tools/plugins">Tools</a>.
+          Plugins and skills are under <a href="/builder/tools/plugins">Builder</a>.
         </p>
       </section>
 
@@ -119,12 +119,13 @@ function Overview() {
           Backup
         </h2>
         <p>
-          A consistent snapshot, written while Nine runs. The workspace archive also holds the files the store refers
-          to, so the two stay in step.
+          A consistent snapshot, written while Nine runs: one tar holding the registry database and every agent's own
+          database, each vacuumed into its own file. The workspace archive also holds the files the store refers to, so
+          the two stay in step.
         </p>
         <div class={detail.actions}>
           <a class={`${detail.action} ${detail.primary} ${styles.linkButton}`} href="/api/v1/backup" download>
-            Download the store (.db)
+            Download the store (.tar.gz)
           </a>
           <a class={`${detail.action} ${styles.linkButton}`} href="/api/v1/backup?with=workspace" download>
             With the workspace (.tar.gz)

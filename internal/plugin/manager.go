@@ -705,6 +705,22 @@ func (m *Manager) Call(ctx context.Context, p *Plugin, toolName string, args jso
 	return cr, nil
 }
 
+// HealthCheck proves a running plugin still answers on its live connection — a
+// tools/list round trip bounded by the handshake timeout — before its tools are
+// (further) exposed to sessions (adr/agents-concept.md A7): a plugin that
+// listened at spawn but died since is caught here, not on the first tool call.
+func (m *Manager) HealthCheck(ctx context.Context, p *Plugin) error {
+	if p == nil || p.client == nil || p.client.conn == nil {
+		return fmt.Errorf("plugin is not running")
+	}
+	ctx, cancel := context.WithTimeout(ctx, mcp.HandshakeTimeout())
+	defer cancel()
+	if _, err := p.client.conn.Call(ctx, "tools/list", map[string]any{}); err != nil {
+		return fmt.Errorf("health check on %q: %w", p.Name, err)
+	}
+	return nil
+}
+
 // JobStatus asks a plugin for the status of one of its jobs
 // (docs/plugin-capabilities.md §5). An unknown job id is not an RPC error: the
 // plugin answers a failed status, so a daemon that lost track cannot wedge.

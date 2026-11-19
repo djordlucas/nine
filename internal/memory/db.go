@@ -137,6 +137,9 @@ func (d db) BeginWrite() (*sql.Tx, error) { return d.w.Begin() }
 // Store wraps the database and exposes typed methods for every domain.
 type Store struct {
 	db        db
+	// path is the file the store was opened from ("" for in-memory); used by
+	// the backup/export copy paths (adr/agents-concept.md Q33).
+	path      string
 	workflows *workflow.Service
 	// queueMu serializes read-modify-write operations on the queued-messages
 	// array. Each QueueMessage/MarkConsumed/MarkAllConsumed call reads the
@@ -195,6 +198,7 @@ func Open(path string) (*Store, error) {
 
 	return &Store{
 		db:        d,
+		path:      path,
 		workflows: workflow.NewService(&sqlWorkflowRepo{db: d}),
 	}, nil
 }
@@ -337,6 +341,7 @@ func initSchema(d db) error {
 			scratchpad   TEXT NOT NULL DEFAULT '[]',
 			queued_messages TEXT NOT NULL DEFAULT '[]',
 			status       TEXT NOT NULL DEFAULT 'active',
+			agent_id     TEXT NOT NULL DEFAULT '',
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
 			updated_at  TEXT NOT NULL DEFAULT ` + nowExpr + `
 		)`,
@@ -621,6 +626,7 @@ func initSchema(d db) error {
 			status      TEXT NOT NULL DEFAULT 'queued',
 			result      TEXT NOT NULL DEFAULT '',
 			source      TEXT NOT NULL DEFAULT 'post',
+			role        TEXT NOT NULL DEFAULT '',
 			priority    INTEGER NOT NULL DEFAULT 0,
 			depth       INTEGER NOT NULL DEFAULT 0,
 			created_at  TEXT NOT NULL DEFAULT ` + nowExpr + `,
@@ -631,6 +637,37 @@ func initSchema(d db) error {
 		`CREATE INDEX IF NOT EXISTS board_tasks_status ON board_tasks (status)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_poster ON board_tasks (posted_by)`,
 		`CREATE INDEX IF NOT EXISTS board_tasks_prio ON board_tasks (status, priority DESC)`,
+		`CREATE TABLE IF NOT EXISTS agents (
+			id         TEXT PRIMARY KEY,
+			name       TEXT NOT NULL,
+			role       TEXT NOT NULL DEFAULT '',
+			skills     TEXT NOT NULL DEFAULT '',
+			self_model TEXT NOT NULL DEFAULT '',
+			reflection TEXT NOT NULL DEFAULT '',
+			version    INTEGER NOT NULL DEFAULT 1,
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS agents_name ON agents (name)`,
+		`CREATE TABLE IF NOT EXISTS agent_versions (
+			agent_id   TEXT NOT NULL,
+			version    INTEGER NOT NULL,
+			definition TEXT NOT NULL,
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			PRIMARY KEY (agent_id, version)
+		)`,
+		// session_index is the registry-side map from a session (conversation)
+		// to the agent whose database holds its rows (adr/agents-concept.md
+		// A4/Q31): the roster and fan-out reads resolve through it.
+		`CREATE TABLE IF NOT EXISTS session_index (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`,
+		`CREATE INDEX IF NOT EXISTS session_index_agent ON session_index (agent_id)`,
 	}
 	for _, s := range stmts {
 		if _, err := d.Exec(s); err != nil {

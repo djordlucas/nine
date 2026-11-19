@@ -175,6 +175,10 @@ type AgentBuilder struct {
 	subAgentMu      sync.RWMutex
 	activeSubAgents []protocol.SubAgentInfo
 
+	// agentMemory resolves a session id to the per-agent store its loop should
+	// use (adr/agents-concept.md A4); nil = the single shared LoopConfig.Memory.
+	agentMemory func(sessionID string) *memory.Store
+
 	// toolVecs caches per-tool description embeddings, keyed by the embedded text
 	// (name and description), so the context builder can rank tools by relevance
 	// to the query. Each distinct description is embedded at most once across all
@@ -227,6 +231,14 @@ func NewAgentBuilder(cfg AgentBuilderConfig) *AgentBuilder {
 	return f
 }
 
+// SetAgentMemory installs the per-session store resolver used in the per-agent
+// layout (adr/agents-concept.md A4): build() swaps LoopConfig.Memory for the
+// store of the agent the session runs from, so the loop's kv, files, vectors,
+// skills and journal are the agent's own.
+func (f *AgentBuilder) SetAgentMemory(fn func(sessionID string) *memory.Store) {
+	f.agentMemory = fn
+}
+
 // Roles exposes the builder's role registry (read-side: Resolve/LeafRoles).
 func (f *AgentBuilder) Roles() *RoleRegistry { return f.roles }
 
@@ -259,7 +271,17 @@ func (f *AgentBuilder) BuildForRole(agentID string, p RoleParams) *agent.Loop {
 	if role.Interactive && f.cfg.HITL != nil {
 		gate.owner = agentID
 	}
-	return f.build(agentID, role, f.maxDelegationDepth(), gate)
+	// Per-agent bundle resolution (adr/agents-concept.md A3): when the session
+	// was run from a stored agent, the agent's skills and self-model scope the
+	// loop. An unknown or deleted agent id falls back to the daemon-wide
+	// defaults — the conversation still runs under the named role.
+	var agentDef *memory.Agent
+	if p.AgentID != "" && f.cfg.Loop.Memory != nil {
+		if a, ok, err := f.cfg.Loop.Memory.AgentGet(p.AgentID); err == nil && ok {
+			agentDef = &a
+		}
+	}
+	return f.build(agentID, role, f.maxDelegationDepth(), gate, agentDef)
 }
 
 // maxDelegationDepth returns the configured depthGuard seed (R-ROLE.6).
@@ -424,8 +446,15 @@ func appendInterceptedTools(tools []ninectx.ToolWithVector, names []string, role
 // eligibility AND caller interactivity). gate routes approval-gate prompts to
 // the owning interactive session, if any — a sub-agent has role.Interactive
 // false but may still be gated through its parent's owner.
-func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx) *agent.Loop {
+func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gateCtx, agentDef *memory.Agent) *agent.Loop {
 	lc := f.cfg.Loop
+	// Per-agent layout (A4): the loop's memory is the store of the agent this
+	// session runs from, so kv/files/vectors/skills/journal are agent-local.
+	if f.agentMemory != nil {
+		if st := f.agentMemory(agentID); st != nil {
+			lc.Memory = st
+		}
+	}
 	d := agent.New()
 
 	// The loop is created after registerCoreTools, so the onConsumed callback
@@ -444,7 +473,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 			d.RegisterPlugin(lc.Mgr, p)
 		}
 	}
-	f.registerCoreTools(d, lc, agentID, onConsumed)
+	// The agent's skill list scopes the skill tools when the session was run
+	// from a stored agent (adr/agents-concept.md A3); nil means daemon-wide.
+	var skillAllow []string
+	if agentDef != nil && agentDef.Skills != "" {
+		_ = json.Unmarshal([]byte(agentDef.Skills), &skillAllow)
+	}
+	f.registerCoreTools(d, lc, agentID, onConsumed, skillAllow)
 
 	// shellTools are conferred by the session shell, not the role's allowlist —
 	// they are granted unfiltered (like gap_report) and pruning in RestrictTo
@@ -629,7 +664,14 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 
 	// tool_search ranks — and tool_list enumerates — the finalized advertised set
 	// (vectors populated above), so register them now that `tools` is complete.
-	getTools := func() []ninectx.ToolWithVector { return tools }
+	// Once the loop exists they read its live set, so a per-turn refresh (below)
+	// is what these surfaces see (adr/agents-concept.md A7, Q32).
+	getTools := func() []ninectx.ToolWithVector {
+		if loop != nil {
+			return loop.CurrentTools()
+		}
+		return tools
+	}
 	var promotions *agent.Promotions
 	if deferred {
 		// A sub-agent's loop is built here too, with its own set: it starts from
@@ -660,6 +702,13 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 	var selfModelFn func(ctx context.Context, queryVec []float32) string
 	if lc.Assembler != nil {
 		selfModelFn = lc.Assembler.Build
+	}
+	// A stored agent's own self-model source replaces the daemon-wide one for
+	// sessions run from it (adr/agents-concept.md A3).
+	if agentDef != nil && agentDef.SelfModel != "" {
+		selfModelFn = func(context.Context, []float32) string {
+			return "## Self-model (this agent)\n```json\n" + agentDef.SelfModel + "\n```"
+		}
 	}
 
 	// Pull-surface a recorded related prior session (adr/reactive-events.md §5),
@@ -749,6 +798,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		Priority:       llm.PriorityConversation,
 		MaxTokens:      lc.maxReplyTokens(),
 		Tools:          tools,
+		// Live grants (adr/agents-concept.md A7, Q32): at the start of every
+		// turn the advertised set and the dispatcher's plugin handlers are
+		// re-resolved from the live plugin roster, so a plugin installed while
+		// this loop runs is offered — and callable, within the role's
+		// allowlist — from the next turn. Never mid-turn.
+		ToolsForTurn: func() []ninectx.ToolWithVector {
+			d.RefreshPlugins(lc.Mgr, func(n string) bool {
+				return role.AllTools || slices.Contains(role.Tools, n)
+			})
+			return assembleTools()
+		},
 		Embedder:       lc.Embedder,
 		SelfModelFn:    selfModelFn,
 		EnrichmentFn:   enrichmentFn,
@@ -786,7 +846,7 @@ func planMentionRiskyTool(plan string, riskyTools []string) bool {
 
 // registerCoreTools registers the gap-report, memory/file, and skill tools
 // available to every role (allowlist pruning happens afterwards in build).
-func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string, onConsumed func(string)) {
+func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, agentID string, onConsumed func(string), skillAllow []string) {
 	agent.RegisterGapReport(d, func(desc string) {
 		f.cfg.Sup.Post(Event{Kind: EventGapReported, AgentID: agentID, Payload: desc})
 	})
@@ -803,7 +863,7 @@ func (f *AgentBuilder) registerCoreTools(d *agent.Dispatcher, lc LoopConfig, age
 	// The workspace index, when one is configured: file_search_text then covers
 	// the operator's directory as well as the store, and list_files exists.
 	d.SetWorkspace(lc.Workspace)
-	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder)
+	agent.RegisterSkillTools(d, lc.Memory, lc.Embedder, skillAllow)
 	agent.RegisterDocTools(d, lc.Memory, lc.Embedder)
 	agent.RegisterQueuedTools(d, lc.Memory, func() string { return agentID }, onConsumed)
 	// Over-cap tool results spill to the file store and come back by path, for
@@ -833,7 +893,7 @@ const directCallAgentID = "direct-call"
 // them against the live host instead (handlePluginCall).
 func (f *AgentBuilder) CoreDispatcher() *agent.Dispatcher {
 	d := agent.New()
-	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID, nil)
+	f.registerCoreTools(d, f.cfg.Loop, directCallAgentID, nil, nil)
 	return d
 }
 
@@ -894,7 +954,7 @@ func (f *AgentBuilder) registerSubAgentTools(d *agent.Dispatcher, lc LoopConfig,
 			}
 			f.emitProgressEvent(parentID, msg)
 		}
-		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task)), f.sink, subProgress)
+		result, err := RunSubAgentSync(ctx, subID, prompt, f.build(subID, leaf, depthGuard-1, f.subGate(gate, leaf.Name, task), nil), f.sink, subProgress)
 		removeSubAgent()
 		status := "done"
 		switch {

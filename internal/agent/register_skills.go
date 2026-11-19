@@ -49,7 +49,20 @@ var skillToolDefs = []llm.ToolDef{
 // skill_write refuses to overwrite one and skill_modify refuses to change one.
 // When embedder is non-nil, write/modify also (re-)embed the skill's
 // description into the "skills" vector namespace so it is semantically retrievable.
-func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder) {
+//
+// allow, when non-nil, scopes the read side (list/search/read) to those skill
+// names — a session run from a stored agent sees only the agent's skills
+// (adr/agents-concept.md A3). Writes stay daemon-wide: one store, two scopes.
+func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embedder, allow []string) {
+	var allowSet map[string]bool
+	if allow != nil {
+		allowSet = make(map[string]bool, len(allow))
+		for _, name := range allow {
+			allowSet[name] = true
+		}
+	}
+	allowed := func(name string) bool { return allowSet == nil || allowSet[name] }
+
 	embedSkill := func(name, description string) {
 		if embedder == nil || description == "" {
 			return
@@ -95,6 +108,9 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 			}
 			hits := make([]hit, 0, len(results))
 			for _, r := range results {
+				if !allowed(r.Key) {
+					continue
+				}
 				h := hit{Name: r.Key, Score: r.Score}
 				if sk, found, err := store.SkillGet(r.Key); err == nil && found {
 					h.Description = sk.Description
@@ -110,7 +126,25 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 	}
 
 	d.handlers["skill_list"] = func(_ context.Context, _ json.RawMessage) (string, error) {
-		return store.SkillListJSON()
+		if allowSet == nil {
+			return store.SkillListJSON()
+		}
+		skills, err := store.SkillList()
+		if err != nil {
+			return "", err
+		}
+		out := make([]memory.Skill, 0, len(skills))
+		for _, sk := range skills {
+			if allowed(sk.Name) {
+				sk.Content = ""
+				out = append(out, sk)
+			}
+		}
+		raw, err := json.Marshal(out)
+		if err != nil {
+			return "", err
+		}
+		return string(raw), nil
 	}
 
 	d.handlers["skill_read"] = func(_ context.Context, args json.RawMessage) (string, error) {
@@ -119,6 +153,9 @@ func RegisterSkillTools(d *Dispatcher, store *memory.Store, embedder embed.Embed
 		}
 		if err := json.Unmarshal(args, &req); err != nil {
 			return "", fmt.Errorf("skill_read: %w", err)
+		}
+		if !allowed(req.Name) {
+			return "", fmt.Errorf("skill %q not found", req.Name)
 		}
 		sk, found, err := store.SkillGet(req.Name)
 		if err != nil {

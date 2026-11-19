@@ -92,14 +92,19 @@ live.
                                 ▼                                      │   └─ board_fail ─────► failed
                              cancelled ◄────────────────────────────────┘
                                                   board_cancel
-    guards on post: depth < max_depth · queue < max_queued · budget left · not an alike duplicate
+    guards on post: depth < max_depth · queue < max_queued · budget left · not an alike duplicate ·
+                     a named role exists and is a leaf (A6, Q16/Q18)
 ```
+
+A claimed task runs its turn under the role it names (claim-time resolution, Q15/Q17 —
+`internal/runtime/process_live.go`); an unnamed task runs under the claiming worker's own
+process role, degrading to `[roles] default_leaf` as any unknown role does.
 
 Reads are open to every session; writes go through role-granted tools:
 
 | Tool | Who | Effect |
 |---|---|---|
-| `board_post({title, spec})` | any session whose role grants it — shipped on `orchestrator` only by default (**decided 2026-11-10**) | admit or refuse with a reason (§2.4); append task |
+| `board_post({title, spec, role?})` | any session whose role grants it — shipped on `orchestrator` only by default (**decided 2026-11-10**) | admit or refuse with a reason (§2.4); append task. `role` names the leaf role the worker runs as (adr/agents-concept.md A6, Q15 — fixed at post time; unknown or non-leaf refused, Q16/Q18); empty leaves it to the claiming worker's own process role (Q17) |
 | `board_list({status?})` | any session | queued/running/done tasks with owners and ages |
 | `board_get({id})` | any session | one task incl. its result |
 | `board_claim({id})` | worker role | `queued` → `running`, sets `claimed_by` — refused if taken |

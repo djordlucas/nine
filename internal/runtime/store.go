@@ -91,38 +91,77 @@ func (s *InMemoryNotifStore) Fetch(agentID string) ([]string, error) {
 // Postgres conversations table, enabling resume across daemon restarts.
 type SQLCheckpointStore struct {
 	store *memory.Store
+	// resolve, when set, routes a session's rows to its agent's own db
+	// (adr/agents-concept.md A4, Q31); the registry stays the fallback.
+	// Nil keeps the single-store layout.
+	resolve func(id string) *memory.Store
+}
+
+// forStore returns the store id's rows live in.
+func (s *SQLCheckpointStore) forStore(id string) *memory.Store {
+	if s.resolve != nil {
+		if st := s.resolve(id); st != nil {
+			return st
+		}
+	}
+	return s.store
 }
 
 func (s *SQLCheckpointStore) Save(agentID string, data []byte) error {
 	log.Debug("SQLCheckpointStore.Save", "agentID", agentID, "data_len", len(data))
-	return s.store.ConversationSave(agentID, data)
+	return s.forStore(agentID).ConversationSave(agentID, data)
 }
 
 func (s *SQLCheckpointStore) Load(agentID string) ([]byte, bool, error) {
 	log.Debug("SQLCheckpointStore.Load", "agentID", agentID)
-	return s.store.ConversationLoad(agentID)
+	return s.forStore(agentID).ConversationLoad(agentID)
 }
 
 func (s *SQLCheckpointStore) Delete(agentID string) error {
 	log.Debug("SQLCheckpointStore.Delete", "agentID", agentID)
-	return s.store.ConversationDelete(agentID)
+	return s.forStore(agentID).ConversationDelete(agentID)
+}
+
+// NameSave keeps a conversation's display name where its agent db's kv holds
+// it, so the session roster (which reads the session's own store) finds it.
+func (s *SQLCheckpointStore) NameSave(id, name string) error {
+	return s.forStore(id).ConversationNameSave(id, name)
+}
+
+// NameLoad reads a conversation's display name from its agent db's kv.
+func (s *SQLCheckpointStore) NameLoad(id string) string {
+	return s.forStore(id).ConversationNameLoad(id)
 }
 
 // SQLNotifStore persists notifications in the memory store's Postgres
 // notifications table.
 type SQLNotifStore struct {
 	store *memory.Store
+	// resolve, when set, routes a session's notifications to its agent's own
+	// db (adr/agents-concept.md Q5); the registry stays the fallback.
+	resolve func(id string) *memory.Store
 }
 
 // Add enqueues a notification for the given agent.
+// forStore routes a session's notifications to its agent db (Q5); nil
+// resolve keeps the single-store layout.
+func (s *SQLNotifStore) forStore(id string) *memory.Store {
+	if s.resolve != nil {
+		if st := s.resolve(id); st != nil {
+			return st
+		}
+	}
+	return s.store
+}
+
 func (s *SQLNotifStore) Add(agentID, text string) {
 	log.Debug("SQLNotifStore.Add", "agentID", agentID, "text", text)
-	s.store.NotificationCreate(newUUID(), agentID, text, false) //nolint:errcheck
+	s.forStore(agentID).NotificationCreate(newUUID(), agentID, text, false) //nolint:errcheck
 }
 
 func (s *SQLNotifStore) Fetch(agentID string) ([]string, error) {
 	log.Debug("SQLNotifStore.Fetch", "agentID", agentID)
-	ns, err := s.store.NotificationListPending(agentID)
+	ns, err := s.forStore(agentID).NotificationListPending(agentID)
 	if err != nil {
 		log.Warn("SQLNotifStore.Fetch NotificationListPending failed", "agentID", agentID, "err", err)
 		return nil, err

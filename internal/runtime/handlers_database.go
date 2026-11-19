@@ -78,8 +78,14 @@ func (d *Daemon) handleDatabase(ctx context.Context, enc *json.Encoder, r protoc
 // journalWrite records an operator's write as a process's are: kinds and
 // tables, never values.
 func (d *Daemon) journalWrite(res sqldb.RunResult, err error) (sqldb.RunResult, error) {
-	// The production store; a test's stand-in journals nothing.
-	if store, ok := d.store.(*memory.Store); ok && len(res.Writes) > 0 {
+	// The production store; a test's stand-in journals nothing. With the
+	// per-agent layout (adr/agents-concept.md A4) the registry store is the
+	// concrete *memory.Store.
+	store, ok := d.store.(*memory.Store)
+	if !ok && d.registry != nil {
+		store, ok = d.registry, true
+	}
+	if ok && len(res.Writes) > 0 {
 		journalTransition(store, OperatorJournalID, evSQLWrite, map[string]any{
 			"by": OperatorJournalID, "writes": res.Writes, "changes": res.Changes, "error": errText(err),
 		})

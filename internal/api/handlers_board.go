@@ -24,6 +24,9 @@ func toAPITask(t protocol.BoardTask) apigen.BoardTask {
 		CreatedAt: parseTime(t.CreatedAt),
 		UpdatedAt: parseTime(t.UpdatedAt),
 	}
+	if t.Role != "" {
+		out.Role = &t.Role
+	}
 	if t.Spec != "" {
 		out.Spec = &t.Spec
 	}
@@ -141,11 +144,15 @@ func (s *Server) CreateBoardTask(ctx context.Context, request apigen.CreateBoard
 	if request.Body.Priority != nil {
 		priority = *request.Body.Priority
 	}
+	role := ""
+	if request.Body.Role != nil {
+		role = *request.Body.Role
+	}
 	postedBy := ""
 	if request.Body.PostedBy != nil {
 		postedBy = *request.Body.PostedBy
 	}
-	t, err := cl.BoardCreate(request.Body.Title, spec, priority, postedBy)
+	t, err := cl.BoardCreate(request.Body.Title, spec, role, priority, postedBy)
 	if err == nil {
 		return apigen.CreateBoardTask200JSONResponse(toAPITask(t)), nil
 	}
@@ -180,6 +187,9 @@ func (s *Server) UpdateBoardTask(ctx context.Context, request apigen.UpdateBoard
 		}
 		if request.Body.Priority != nil {
 			patch["priority"] = *request.Body.Priority
+		}
+		if request.Body.Role != nil {
+			patch["role"] = *request.Body.Role
 		}
 	}
 	if len(patch) == 0 {

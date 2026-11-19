@@ -385,6 +385,7 @@ aborts the others — one bad drop-in cannot take the daemon down.
 |---------|--------|
 | `nine plugins` | The live roster: built-in and user plugins with their tools, plus any skipped user plugins and the reason. |
 | `nine plugins reload` | Re-scan `user_dir` and start/stop user plugins live. New turns pick up the new set; in-flight turns keep theirs. |
+| `nine plugin install <dir\|file\|url>` | Install a plugin into the running daemon (adr/agents-concept.md A7): files are vetted (disabled list, MCP handshake, tool collision) and landed in `user_dir`, then loaded — running sessions get the new tools from their next turn. A `.tar.gz` URL is extracted; anything else is fetched as one file. |
 | `nine plugin validate [path]` | Run the load-time handshake locally (no daemon needed) against `user_dir`, a `.toml` manifest, or a binary — vet before you deploy. |
 
 See `plugins.d/README.md` for an operator walkthrough.
@@ -479,6 +480,6 @@ via a `_meta` extension on the `tools/call` result (adr/modular_nine.md §2). Se
 | User plugins need a restart or reload | A new plugin under `[plugins].user_dir` is discovered at boot. `nine plugins reload` picks up changes for user plugins; built-ins need a daemon restart. |
 | Unbounded concurrency by default | `max_concurrent` defaults to 0, meaning unbounded. A plugin holding shared mutable state must declare its own cap. |
 | No capability sandbox | A plugin is an ordinary subprocess running as the daemon's process user, with the daemon's filesystem and network reach; `shell` is the sharpest case. The wasm capability boundary is gone with the toolvm (adr/modular_nine.md §9.10) — contain reach with the container or a restricted user. |
-| A reloaded plugin reaches only new loops | `nine plugins reload` starts the plugin, but a session already running keeps the tool set its loop was built with, so a reloaded plugin tool reaches an existing conversation only after it ends. |
+| A reloaded plugin reaches only new loops | Superseded (adr/agents-concept.md Q32): after a reload or a `nine plugin install`, a running session's loop re-resolves its tool definitions at each turn start, so new tools are granted from the next turn — never mid-turn. |
 | MCP tools are invisible to built-in roles | Their names carry an operator-chosen prefix, and role allowlists match exactly. |
 | A plugin cannot call back | The daemon dials the plugin and never the reverse. A plugin reports long-running work by being polled. |

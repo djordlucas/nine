@@ -28,10 +28,10 @@ func TestDecodeRequestProducesTypedRequests(t *testing.T) {
 					t.Errorf("got %#v", r)
 				}
 			}},
-		{"board_create", protocol.NewBoardCreateMsg("T", "S", 3, "conv-1"),
+		{"board_create", protocol.NewBoardCreateMsg("T", "S", "researcher", 3, "conv-1"),
 			func(t *testing.T, r protocol.Request) {
 				got, ok := r.(protocol.BoardCreateReq)
-				if !ok || got.Title != "T" || got.Spec != "S" || got.Priority != 3 || got.PostedBy != "conv-1" {
+				if !ok || got.Title != "T" || got.Spec != "S" || got.Role != "researcher" || got.Priority != 3 || got.PostedBy != "conv-1" {
 					t.Errorf("got %#v", r)
 				}
 			}},
@@ -200,6 +200,21 @@ func TestEveryClientMsgTypeDecodes(t *testing.T) {
 		protocol.TypeWatch:            {AgentID: "a1"},
 		protocol.TypeJournalFollow:    {After: 7, Limit: 10},
 		protocol.TypeTurnCancel:       {AgentID: "a1"},
+		protocol.TypeAgentList:        {},
+		protocol.TypeAgentGet:         {ID: "agent_1"},
+		protocol.TypeAgentCreate:      {Text: `{"name":"x"}`},
+		protocol.TypeAgentUpdate:      {ID: "agent_1", Text: `{}`},
+		protocol.TypeAgentDelete:      {ID: "agent_1"},
+		protocol.TypeAgentRun:         {ID: "agent_1"},
+		protocol.TypeAgentExport:      {ID: "agent_1"},
+		protocol.TypeAgentImport:      {Text: `{"tar_base64":""}`},
+		protocol.TypeAgentApprove:     {ID: "agent_1"},
+		protocol.TypePluginInstall:    {Text: `{"files":{"p.toml":""}}`},
+		protocol.TypeSkillCreate:      {Text: `{"name":"s","content":"c"}`},
+		protocol.TypeSkillUpdate:      {ID: "s", Text: `{"content":"c2"}`},
+		protocol.TypeSkillDelete:      {ID: "s"},
+		protocol.TypeMemorySet:        {Text: `{"key":"k","value":"v"}`},
+		protocol.TypeMemoryDelete:     {Text: "k"},
 		protocol.TypeConfig:           {},
 		protocol.TypeSelfModel:        {},
 	}

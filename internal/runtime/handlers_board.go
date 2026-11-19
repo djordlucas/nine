@@ -3,6 +3,8 @@ package runtime
 import (
 	"encoding/json"
 	"fmt"
+	"slices"
+	"strings"
 
 	"nine/internal/memory"
 	"nine/internal/protocol"
@@ -16,8 +18,8 @@ func toWireTask(t memory.BoardTask) protocol.BoardTask {
 	return protocol.BoardTask{
 		ID: t.ID, Title: t.Title, Spec: t.Spec, PostedBy: t.PostedBy,
 		ClaimedBy: t.ClaimedBy, Status: t.Status, Result: t.Result, Source: t.Source,
-		Priority: t.Priority, Depth: t.Depth, CreatedAt: t.CreatedAt, ClaimedAt: t.ClaimedAt,
-		FinishedAt: t.FinishedAt, UpdatedAt: t.UpdatedAt,
+		Role: t.Role, Priority: t.Priority, Depth: t.Depth, CreatedAt: t.CreatedAt,
+		ClaimedAt: t.ClaimedAt, FinishedAt: t.FinishedAt, UpdatedAt: t.UpdatedAt,
 	}
 }
 
@@ -56,7 +58,7 @@ func (d *Daemon) handleBoardGet(enc *json.Encoder, id string) {
 	}
 }
 
-func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string, priority int, postedBy string) {
+func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec, role string, priority int, postedBy string) {
 	if d.store == nil {
 		enc.Encode(protocol.NewErrorMsg("board is not enabled here")) //nolint:errcheck
 		return
@@ -64,7 +66,12 @@ func (d *Daemon) handleBoardCreate(enc *json.Encoder, title, spec string, priori
 	if postedBy == "" {
 		postedBy = "operator"
 	}
-	t, err := d.store.BoardTaskCreate(title, spec, postedBy, memory.BoardSourcePost, priority, 0)
+	role = strings.TrimSpace(role)
+	if role != "" && d.roles != nil && !slices.Contains(d.roles.LeafRoles(), role) {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("board task role %q is unknown or not a leaf role — GET /roles shows the delegatable leaves", role))) //nolint:errcheck
+		return
+	}
+	t, err := d.store.BoardTaskCreate(title, spec, postedBy, memory.BoardSourcePost, role, priority, 0)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
@@ -105,6 +112,11 @@ func (d *Daemon) handleBoardUpdate(enc *json.Encoder, id string, payload map[str
 			if json.Unmarshal(v, &s) == nil {
 				p.Result = &s
 			}
+		case "role":
+			var s string
+			if json.Unmarshal(v, &s) == nil {
+				p.Role = &s
+			}
 		case "priority":
 			var n int
 			if json.Unmarshal(v, &n) == nil {
@@ -117,6 +129,16 @@ func (d *Daemon) handleBoardUpdate(enc *json.Encoder, id string, payload map[str
 				p.Claimed = &empty
 			}
 		}
+	}
+	// A role change on the operator path gets the same admission as board_post
+	// (Q15/Q16): known leaf roles only.
+	if p.Role != nil {
+		r := strings.TrimSpace(*p.Role)
+		if r != "" && d.roles != nil && !slices.Contains(d.roles.LeafRoles(), r) {
+			enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("board task role %q is unknown or not a leaf role — GET /roles shows the delegatable leaves", r))) //nolint:errcheck
+			return
+		}
+		p.Role = &r
 	}
 	t, ok, err := d.store.BoardTaskUpdate(id, p)
 	switch {

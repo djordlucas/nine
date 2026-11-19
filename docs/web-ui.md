@@ -37,6 +37,7 @@ docker run -e NINE_API_AUTH_TOKEN=… -p 8080:8080 ghcr.io/djordlucas/nine
 | Tools | the tools by where they came from, each with its capabilities, dependencies and arguments schema, to call directly; a tool Nine wrote with its versions. Also the plugins, with reload, and the skills, each readable. |
 | Inbox | capability requests to approve or deny, questions waiting for an answer, the notifications, and the capabilities in force. Its link counts what waits. |
 | Data | the workspace's files and the database processes keep their records in, to read and edit; Nine's self-model and its key-value memory, to read. Nine's own state, the store and the workspace's `.nine/`, is not reachable. |
+| Builder | the operator's composition surface (adr/agents-concept.md A8, Q24/Q25): agents — create, edit, run into a conversation, export as a bundle, import staged until approved, delete — roles, skills, and the key-value memory, each editable over REST (Q23, the same stores the model's tools write). |
 | System | the daemon's status, a backup to download, every session, reflections, and the docs and spec this build embeds. |
 
 On a phone every list opens its item full screen, with ‹ to go back.

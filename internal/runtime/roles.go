@@ -277,6 +277,8 @@ func (r *RoleRegistry) RoleInfos() []agent.RoleInfo {
 		out = append(out, agent.RoleInfo{
 			Name: name, Description: role.Description,
 			AllTools: role.AllTools, Tools: role.Tools, Delegates: role.Delegates,
+			Leaf:        !role.Persists && !role.SpawnsGoals && name != AnalystRole,
+			SpawnsGoals: role.SpawnsGoals, Persists: role.Persists, Interactive: role.Interactive,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
@@ -305,6 +307,8 @@ func (r *RoleRegistry) RoleInfos() []agent.RoleInfo {
 				stored = append(stored, agent.RoleInfo{
 					Name: sk.Name, Description: sk.Description,
 					AllTools: role.AllTools, Tools: role.Tools, Delegates: role.Delegates,
+					Leaf:        !role.Persists && !role.SpawnsGoals,
+					SpawnsGoals: role.SpawnsGoals, Persists: role.Persists, Interactive: role.Interactive,
 				})
 			}
 		}

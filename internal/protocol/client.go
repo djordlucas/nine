@@ -2,6 +2,7 @@ package protocol
 
 import (
 	"bufio"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -662,6 +663,48 @@ func (c *Client) GetSkill(name string) (SkillDetail, error) {
 	return out, err
 }
 
+// SkillCreate writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+func (c *Client) SkillCreate(name, description string, tags []string, content string) (SkillDetail, error) {
+	var out SkillDetail
+	err := c.roundTrip(NewSkillCreateMsg(name, description, tags, content), &out)
+	return out, err
+}
+
+// SkillUpdate patches one skill; only the patch's fields change.
+func (c *Client) SkillUpdate(name string, patch map[string]any) (SkillDetail, error) {
+	var out SkillDetail
+	err := c.roundTrip(NewSkillUpdateMsg(name, patch), &out)
+	return out, err
+}
+
+// SkillDelete removes one skill by name.
+func (c *Client) SkillDelete(name string) error {
+	return c.roundTripText(NewSkillDeleteMsg(name))
+}
+
+// MemorySet sets one key of the key-value memory (operator REST only).
+func (c *Client) MemorySet(key, value string) error {
+	return c.roundTripText(NewMemorySetMsg(key, value))
+}
+
+// MemoryDelete removes one key of the key-value memory.
+func (c *Client) MemoryDelete(key string) error {
+	return c.roundTripText(NewMemoryDeleteMsg(key))
+}
+
+// roundTripText is roundTrip for a reply whose Text is a plain string, not JSON.
+func (c *Client) roundTripText(m Msg) error {
+	if err := c.send(m); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, m.Type)
+}
+
 // CreateGoal creates a goal on the operator's behalf. parentID names a parent
 // goal for a sub-goal; empty creates a top-level goal with its own pursue
 // session. schedule makes a top-level goal recurring: a duration ("24h") or a
@@ -854,6 +897,33 @@ func (c *Client) ListTools() ([]ToolSummary, error) {
 // each with its tools, plus any user plugins that were skipped with a reason.
 func (c *Client) ListPlugins() ([]PluginStatus, error) {
 	return c.pluginStatusQuery(TypePluginsList)
+}
+
+// InstallPlugin installs a user plugin into the running daemon
+// (adr/agents-concept.md A7): files are keyed by path relative to
+// [plugins].user_dir — one <name>.toml manifest plus its entrypoint and any
+// sidecars — and are vetted (disabled list, MCP handshake, tool collision)
+// before landing, then the reload starts them. Operator-only.
+func (c *Client) InstallPlugin(files map[string][]byte) ([]PluginStatus, error) {
+	b64 := make(map[string]string, len(files))
+	for name, raw := range files {
+		b64[name] = base64.StdEncoding.EncodeToString(raw)
+	}
+	if err := c.send(NewPluginInstallMsg(b64)); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypePluginInstall); err != nil {
+		return nil, err
+	}
+	var plugins []PluginStatus
+	if err := json.Unmarshal([]byte(reply.Text), &plugins); err != nil {
+		return nil, fmt.Errorf("decode plugins: %w", err)
+	}
+	return plugins, nil
 }
 
 // ReloadPlugins asks the daemon to re-scan the user-plugin directory and reload
@@ -1059,8 +1129,8 @@ func (c *Client) BoardGet(id string) (BoardTask, error) {
 
 // BoardCreate posts a task as the operator; postedBy names the conversation
 // whose board the task belongs to ("" for the operator's own).
-func (c *Client) BoardCreate(title, spec string, priority int, postedBy string) (BoardTask, error) {
-	if err := c.send(NewBoardCreateMsg(title, spec, priority, postedBy)); err != nil {
+func (c *Client) BoardCreate(title, spec, role string, priority int, postedBy string) (BoardTask, error) {
+	if err := c.send(NewBoardCreateMsg(title, spec, role, priority, postedBy)); err != nil {
 		return BoardTask{}, err
 	}
 	reply, err := c.recv()
@@ -1106,6 +1176,171 @@ func (c *Client) BoardDelete(id string) error {
 		return err
 	}
 	return expectReply(reply, TypeBoardDelete)
+}
+
+// Agent verbs (adr/agents-concept.md A5): the stored agent definitions, CRUD plus
+// run. Replies echo the request type with the agent(s) as JSON in Text.
+
+func (c *Client) AgentList() ([]Agent, error) {
+	if err := c.send(NewAgentListMsg()); err != nil {
+		return nil, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return nil, err
+	}
+	if err := expectReply(reply, TypeAgentList); err != nil {
+		return nil, err
+	}
+	var out []Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return nil, fmt.Errorf("decode agents: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentGet(id string) (Agent, error) {
+	if err := c.send(NewAgentGetMsg(id)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentGet); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentCreate(def AgentDefinition) (Agent, error) {
+	if err := c.send(NewAgentCreateMsg(def)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentCreate); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentUpdate(id string, patch map[string]any) (Agent, error) {
+	if err := c.send(NewAgentUpdateMsg(id, patch)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentUpdate); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent: %w", err)
+	}
+	return out, nil
+}
+
+func (c *Client) AgentDelete(id string) error {
+	if err := c.send(NewAgentDeleteMsg(id)); err != nil {
+		return err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return err
+	}
+	return expectReply(reply, TypeAgentDelete)
+}
+
+// AgentRun starts a conversation from the stored agent and returns the run
+// result naming both ids and the resolved role.
+func (c *Client) AgentRun(id string, interactive bool) (AgentRunResult, error) {
+	if err := c.send(NewAgentRunMsg(id, interactive)); err != nil {
+		return AgentRunResult{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return AgentRunResult{}, err
+	}
+	if err := expectReply(reply, TypeAgentRun); err != nil {
+		return AgentRunResult{}, err
+	}
+	var out AgentRunResult
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return AgentRunResult{}, fmt.Errorf("decode agent run: %w", err)
+	}
+	return out, nil
+}
+
+// AgentExport returns the agent's bundle tar (manifest; the agent's database
+// joins the bundle in phase 3, adr/agents-concept.md A4).
+func (c *Client) AgentExport(id string) (AgentExportResult, error) {
+	if err := c.send(NewAgentExportMsg(id)); err != nil {
+		return AgentExportResult{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return AgentExportResult{}, err
+	}
+	if err := expectReply(reply, TypeAgentExport); err != nil {
+		return AgentExportResult{}, err
+	}
+	var out AgentExportResult
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return AgentExportResult{}, fmt.Errorf("decode agent export: %w", err)
+	}
+	return out, nil
+}
+
+// AgentImport imports a bundle tar and returns the staged agent it created
+// (adr/agents-concept.md Q30 — approve it before running).
+func (c *Client) AgentImport(tarBytes []byte) (Agent, error) {
+	if err := c.send(NewAgentImportMsg(tarBytes)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentImport); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent import: %w", err)
+	}
+	return out, nil
+}
+
+// AgentApprove approves a staged (imported) agent, making it runnable.
+func (c *Client) AgentApprove(id string) (Agent, error) {
+	if err := c.send(NewAgentApproveMsg(id)); err != nil {
+		return Agent{}, err
+	}
+	reply, err := c.recv()
+	if err != nil {
+		return Agent{}, err
+	}
+	if err := expectReply(reply, TypeAgentApprove); err != nil {
+		return Agent{}, err
+	}
+	var out Agent
+	if err := json.Unmarshal([]byte(reply.Text), &out); err != nil {
+		return Agent{}, fmt.Errorf("decode agent approve: %w", err)
+	}
+	return out, nil
 }
 
 // RolesList returns the role registry (adr/orchestrator-board.md §2.2.1).

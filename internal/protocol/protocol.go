@@ -1,6 +1,7 @@
 package protocol
 
 import (
+	"encoding/base64"
 	"encoding/json"
 	"strconv"
 	"time"
@@ -70,13 +71,19 @@ const (
 	TypeListTools         MsgType = "list_tools"
 	TypeListSkills        MsgType = "list_skills"
 	TypeSkillGet          MsgType = "skill_get"
+	TypeSkillCreate       MsgType = "skill_create"
+	TypeSkillUpdate       MsgType = "skill_update"
+	TypeSkillDelete       MsgType = "skill_delete"
 	TypeMemoryList        MsgType = "memory_list"
 	TypeMemoryGet         MsgType = "memory_get"
+	TypeMemorySet         MsgType = "memory_set"
+	TypeMemoryDelete      MsgType = "memory_delete"
 	TypeBackup            MsgType = "backup"
 	TypeWorkspace         MsgType = "workspace"
 	TypeDatabase          MsgType = "database"
 	TypePluginsList       MsgType = "plugins_list"
 	TypePluginsReload     MsgType = "plugins_reload"
+	TypePluginInstall     MsgType = "plugin_install"
 	TypeSessionsList      MsgType = "sessions_list"
 	TypeProcessList       MsgType = "process_list"
 	TypeBoardList         MsgType = "board_list"
@@ -90,6 +97,15 @@ const (
 	TypeGrantsList        MsgType = "grants_list"
 	TypeListHumanRequests MsgType = "list_human_requests"
 	TypeGrantsDecide      MsgType = "grants_decide"
+	TypeAgentList         MsgType = "agent_list"
+	TypeAgentGet          MsgType = "agent_get"
+	TypeAgentCreate       MsgType = "agent_create"
+	TypeAgentUpdate       MsgType = "agent_update"
+	TypeAgentDelete       MsgType = "agent_delete"
+	TypeAgentRun          MsgType = "agent_run"
+	TypeAgentExport       MsgType = "agent_export"
+	TypeAgentImport       MsgType = "agent_import"
+	TypeAgentApprove      MsgType = "agent_approve"
 )
 
 // Daemon → client.
@@ -214,13 +230,19 @@ var ClientMsgTypes = []MsgType{
 	TypeListTools,
 	TypeListSkills,
 	TypeSkillGet,
+	TypeSkillCreate,
+	TypeSkillUpdate,
+	TypeSkillDelete,
 	TypeMemoryList,
 	TypeMemoryGet,
+	TypeMemorySet,
+	TypeMemoryDelete,
 	TypeBackup,
 	TypeWorkspace,
 	TypeDatabase,
 	TypePluginsList,
 	TypePluginsReload,
+	TypePluginInstall,
 	TypeSessionsList,
 	TypeProcessList,
 	TypeBoardList,
@@ -234,6 +256,15 @@ var ClientMsgTypes = []MsgType{
 	TypeGrantsList,
 	TypeListHumanRequests,
 	TypeGrantsDecide,
+	TypeAgentList,
+	TypeAgentGet,
+	TypeAgentCreate,
+	TypeAgentUpdate,
+	TypeAgentDelete,
+	TypeAgentRun,
+	TypeAgentExport,
+	TypeAgentImport,
+	TypeAgentApprove,
 	TypeHumanInputAnswer,
 }
 
@@ -263,6 +294,10 @@ const (
 //	"session_stop"     — terminate a session; AgentID set, or Text = "--all"
 //	"plugins_list"     — request the plugin roster; no extra fields
 //	"plugins_reload"   — re-scan the user-plugin dir and reload; no extra fields
+//	"plugin_install"   — install a user plugin into a running Nine (operator only,
+//	                     never a model tool; adr/agents-concept.md A7); Text = JSON
+//	                     {"files": {relpath: base64, ...}} — one <name>.toml manifest
+//	                     plus its entrypoint and sidecars
 //	"tools_list"       — request the sandboxed-tool roster; no extra fields
 //	"tools_reload"     — re-scan the sandboxed-tool dir and reload; no extra fields
 //	"grants_list"      — capability requests and grants; no extra fields
@@ -270,6 +305,14 @@ const (
 //	                     RequestID = the id, Text = approve|deny|revoke
 //	"list_skills"      — request the skill catalog; no extra fields
 //	"skill_get"        — request one skill with its body; Text = skill name
+//	"skill_create"     — write a new skill (operator REST only, never a model
+//	                     tool; adr/agents-concept.md A8, Q23); Text = JSON
+//	                     {name, description, tags, content}
+//	"skill_update"     — patch one skill; ID = name, Text = JSON patch
+//	"skill_delete"     — delete one skill; ID = name
+//	"memory_set"       — set one memory key (operator REST only); Text = JSON
+//	                     {key, value}
+//	"memory_delete"    — delete one memory key; Text = key
 //	"backup"           — write a snapshot to a temporary file; Text = "workspace" to
 //	                     include the workspace, else empty
 //	"workspace"        — a workspace file operation; Text = list|read|write|delete,
@@ -285,6 +328,18 @@ const (
 //	"session_events"   — a session's raw journal; AgentID set, Turn = 0 for every
 //	                     turn, N for turn N, or -1 for the latest turn
 //	"watch"            — follow a session's progress events; AgentID set
+//	"agent_list"       — request the stored agent definitions; no extra fields
+//	"agent_get"        — one agent definition; ID = agent id
+//	"agent_create"     — create an agent; Text = JSON AgentDefinition
+//	"agent_update"     — update an agent; ID = agent id, Text = JSON patch
+//	"agent_delete"     — delete an agent and its versions; ID = agent id
+//	"agent_run"        — start a conversation from an agent; ID = agent id,
+//	                     Interactive marks the session HITL-eligible
+//	"agent_export"     — export an agent as a bundle tar; ID = agent id,
+//	                     Text reply carries JSON AgentExportResult (base64 tar)
+//	"agent_import"     — import a bundle tar; Text = JSON AgentImportRequest
+//	                     (base64 tar); the agent lands staged until approved
+//	"agent_approve"    — approve a staged (imported) agent; ID = agent id
 //
 // Daemon → client:
 //
@@ -300,6 +355,7 @@ const (
 //	"workflow_fail"    — fail result; Text = "failed"
 //	"plugins_list"     — plugin roster; Text carries JSON-encoded PluginStatus array
 //	"plugins_reload"   — reload result; Text carries the JSON-encoded PluginStatus array
+//	"plugin_install"   — install result; Text carries the JSON-encoded PluginStatus array
 //	"tools_list"       — sandboxed-tool roster; Text carries JSON-encoded SandboxedToolStatus array
 //	"tools_reload"     — reload result; Text carries the JSON-encoded SandboxedToolStatus array
 //	"grants_list"      — capability state; Text carries JSON-encoded CapabilityState
@@ -314,6 +370,11 @@ const (
 //	"stage"            — the turn entered a named waiting phase; Text carries the label
 //	"list_skills"      — skill catalog; Text carries JSON {"skills": [SkillInfo]}
 //	"skill_get"        — one skill; Text carries JSON SkillDetail
+//	"skill_create"     — the created skill; Text carries JSON SkillDetail
+//	"skill_update"     — the updated skill; Text carries JSON SkillDetail
+//	"skill_delete"     — Text = "deleted <name>"
+//	"memory_set"       — Text = "ok"
+//	"memory_delete"    — Text = "deleted <key>"
 //	"backup"           — the snapshot written; Text carries JSON BackupResult
 //	"workspace"        — Text carries JSON: WorkspaceListing (list), WorkspaceFile
 //	                     (read), WorkspaceEntry (write, delete)
@@ -328,6 +389,15 @@ const (
 //	"watch"            — watch accepted; AgentID echoed. Then, for every turn the
 //	                     session runs whatever started it: its progress events,
 //	                     "response" (or "error" with AgentID), and "done"
+//	"agent_list"       — agent list; Text carries JSON []Agent
+//	"agent_get"        — one agent; Text carries JSON Agent
+//	"agent_create"     — the created agent; Text carries JSON Agent
+//	"agent_update"     — the updated agent; Text carries JSON Agent
+//	"agent_delete"     — deletion result; Text = "deleted"
+//	"agent_run"        — run result; Text carries JSON AgentRunResult
+//	"agent_export"     — export result; Text carries JSON AgentExportResult
+//	"agent_import"     — the imported (staged) agent; Text carries JSON Agent
+//	"agent_approve"    — the approved agent; Text carries JSON Agent
 type Msg struct {
 	AgentID         string          `json:"agent_id,omitempty"`
 	Type            MsgType         `json:"type"`
@@ -480,12 +550,54 @@ type BoardTask struct {
 	Status     string `json:"status"`
 	Result     string `json:"result,omitempty"`
 	Source     string `json:"source"`
+	Role       string `json:"role,omitempty"`
 	Priority   int    `json:"priority"`
 	Depth      int    `json:"depth"`
 	CreatedAt  string `json:"created_at"`
 	ClaimedAt  string `json:"claimed_at,omitempty"`
 	FinishedAt string `json:"finished_at,omitempty"`
 	UpdatedAt  string `json:"updated_at"`
+}
+
+// AgentDefinition is the composable bundle an agent is made of
+// (adr/agents-concept.md A3): its role, skills, self-model and reflection.
+// SelfModel and Reflection are free-form JSON, empty when unset.
+type AgentDefinition struct {
+	Name       string          `json:"name"`
+	Role       string          `json:"role,omitempty"`
+	Skills     []string        `json:"skills,omitempty"`
+	SelfModel  json.RawMessage `json:"self_model,omitempty"`
+	Reflection json.RawMessage `json:"reflection,omitempty"`
+}
+
+// Agent is a stored agent definition with its identity and version
+// (adr/agents-concept.md A5; definitions are versioned, Q14). Status is
+// "active" or "staged" — an imported agent is staged until approved (Q30).
+type Agent struct {
+	ID         string          `json:"id"`
+	Version    int             `json:"version"`
+	Status     string          `json:"status"`
+	Definition AgentDefinition `json:"definition"`
+	CreatedAt  string          `json:"created_at"`
+	UpdatedAt  string          `json:"updated_at"`
+}
+
+// AgentRunResult is the agent_run reply: the conversation started from the agent.
+type AgentRunResult struct {
+	AgentID        string `json:"agent_id"`
+	ConversationID string `json:"conversation_id"`
+	Role           string `json:"role,omitempty"`
+}
+
+// AgentExportResult is the agent_export reply: the bundle as a base64 tar.
+type AgentExportResult struct {
+	Filename  string `json:"filename"`
+	TarBase64 string `json:"tar_base64"`
+}
+
+// AgentImportRequest is the agent_import payload: a bundle as a base64 tar.
+type AgentImportRequest struct {
+	TarBase64 string `json:"tar_base64"`
 }
 
 type ProcessInfo struct {
@@ -803,6 +915,17 @@ func NewMemoryGetMsg(key string) Msg {
 	return Msg{Type: TypeMemoryGet, Text: key}
 }
 
+// NewMemorySetMsg sets one key of the key-value memory (operator REST only).
+func NewMemorySetMsg(key, value string) Msg {
+	raw, _ := json.Marshal(map[string]any{"key": key, "value": value})
+	return Msg{Type: TypeMemorySet, Text: string(raw)}
+}
+
+// NewMemoryDeleteMsg deletes one key of the key-value memory (operator REST only).
+func NewMemoryDeleteMsg(key string) Msg {
+	return Msg{Type: TypeMemoryDelete, Text: key}
+}
+
 // MemoryEntry is one key of the key-value memory, as memory_list lists it:
 // its size and when it last changed, not its value.
 type MemoryEntry struct {
@@ -820,6 +943,26 @@ type MemoryValue struct {
 // NewSkillGetMsg asks for one skill with its body.
 func NewSkillGetMsg(name string) Msg {
 	return Msg{Type: TypeSkillGet, Text: name}
+}
+
+// NewSkillCreateMsg writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+func NewSkillCreateMsg(name, description string, tags []string, content string) Msg {
+	raw, _ := json.Marshal(map[string]any{
+		"name": name, "description": description, "tags": tags, "content": content,
+	})
+	return Msg{Type: TypeSkillCreate, Text: string(raw)}
+}
+
+// NewSkillUpdateMsg patches one skill; the patch carries the JSON fields to change.
+func NewSkillUpdateMsg(name string, patch map[string]any) Msg {
+	raw, _ := json.Marshal(patch)
+	return Msg{Type: TypeSkillUpdate, ID: name, Text: string(raw)}
+}
+
+// NewSkillDeleteMsg deletes one skill by name.
+func NewSkillDeleteMsg(name string) Msg {
+	return Msg{Type: TypeSkillDelete, ID: name}
 }
 
 // GoalCreateResult is the "goal_create" reply. Goal is the stored row, as a
@@ -982,8 +1125,8 @@ func NewProcessListMsg() Msg { return Msg{Type: TypeProcessList} }
 // carry their payload as JSON in Text; get/delete carry the id in ID.
 func NewBoardListMsg(status string) Msg { return Msg{Type: TypeBoardList, Text: status} }
 func NewBoardGetMsg(id string) Msg       { return Msg{Type: TypeBoardGet, ID: id} }
-func NewBoardCreateMsg(title, spec string, priority int, postedBy string) Msg {
-	raw, _ := json.Marshal(map[string]any{"title": title, "spec": spec, "priority": priority, "posted_by": postedBy})
+func NewBoardCreateMsg(title, spec, role string, priority int, postedBy string) Msg {
+	raw, _ := json.Marshal(map[string]any{"title": title, "spec": spec, "role": role, "priority": priority, "posted_by": postedBy})
 	return Msg{Type: TypeBoardCreate, Text: string(raw)}
 }
 func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
@@ -991,6 +1134,48 @@ func NewBoardUpdateMsg(id string, patch map[string]any) Msg {
 	return Msg{Type: TypeBoardUpdate, ID: id, Text: string(raw)}
 }
 func NewBoardDeleteMsg(id string) Msg { return Msg{Type: TypeBoardDelete, ID: id} }
+
+// NewPluginInstallMsg builds a plugin_install from the plugin's files, each
+// keyed by its path relative to the user-plugin dir (one <name>.toml manifest
+// plus its entrypoint and any sidecars), values base64-encoded
+// (adr/agents-concept.md A7 — operator-only, never a model tool).
+func NewPluginInstallMsg(files map[string]string) Msg {
+	raw, _ := json.Marshal(map[string]any{"files": files})
+	return Msg{Type: TypePluginInstall, Text: string(raw)}
+}
+
+// Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
+// run through the daemon. Create/update carry their payload as JSON in Text;
+// get/update/delete/run carry the agent id in ID.
+func NewAgentListMsg() Msg                        { return Msg{Type: TypeAgentList} }
+func NewAgentGetMsg(id string) Msg                { return Msg{Type: TypeAgentGet, ID: id} }
+func NewAgentDeleteMsg(id string) Msg             { return Msg{Type: TypeAgentDelete, ID: id} }
+func NewAgentRunMsg(id string, interactive bool) Msg {
+	return Msg{Type: TypeAgentRun, ID: id, Interactive: interactive}
+}
+
+// NewAgentCreateMsg builds an agent_create from a definition.
+func NewAgentCreateMsg(def AgentDefinition) Msg {
+	raw, _ := json.Marshal(def)
+	return Msg{Type: TypeAgentCreate, Text: string(raw)}
+}
+
+// NewAgentUpdateMsg builds an agent_update from a patch (field name → JSON value).
+func NewAgentUpdateMsg(id string, patch map[string]any) Msg {
+	raw, _ := json.Marshal(patch)
+	return Msg{Type: TypeAgentUpdate, ID: id, Text: string(raw)}
+}
+
+func NewAgentExportMsg(id string) Msg { return Msg{Type: TypeAgentExport, ID: id} }
+func NewAgentApproveMsg(id string) Msg {
+	return Msg{Type: TypeAgentApprove, ID: id}
+}
+
+// NewAgentImportMsg builds an agent_import from a bundle's raw tar bytes.
+func NewAgentImportMsg(tarBytes []byte) Msg {
+	raw, _ := json.Marshal(AgentImportRequest{TarBase64: base64.StdEncoding.EncodeToString(tarBytes)})
+	return Msg{Type: TypeAgentImport, Text: string(raw)}
+}
 
 // NewRolesListMsg asks for the role registry (adr/orchestrator-board.md §2.2.1).
 func NewRolesListMsg() Msg { return Msg{Type: TypeRolesList} }
@@ -1002,6 +1187,12 @@ type RoleInfo struct {
 	AllTools    bool     `json:"all_tools"`
 	Tools       []string `json:"tools,omitempty"`
 	Delegates   bool     `json:"delegates"`
+	Leaf        bool     `json:"leaf"`
+	// The remaining structural flags, exposed so the Builder UI can edit a
+	// role without losing them (adr/agents-concept.md A8, Q23).
+	SpawnsGoals bool `json:"spawns_goals"`
+	Persists    bool `json:"persists"`
+	Interactive bool `json:"interactive"`
 }
 
 // NewToolCallMsg invokes one tool once, for testing.

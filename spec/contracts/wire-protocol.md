@@ -89,6 +89,7 @@ Msg {
 | `plugin_call` | `tool_name`, `tool_input` | invoke a tool directly, **bypassing the LLM** |
 | `plugins_list` | — | request the plugin roster (built-in + user, with skip reasons) |
 | `plugins_reload` | — | re-scan `[plugins].user_dir` and reload user plugins live (built-ins untouched) |
+| `plugin_install` | `text` = JSON `{"files": {relpath: base64, …}}` (**required**) | install a user plugin into the running daemon — operator-only, never an agent tool (adr/agents-concept.md A7, Q20): one `<name>.toml` manifest plus entrypoint/sidecars, vetted (disabled list, MCP handshake, tool collision) and landed in `[plugins].user_dir`, then reloaded so its tools reach running sessions from the next turn (Q32); existing files are never overwritten |
 | `tools_list` | — | stub: answers an empty roster (the sandboxed tier is removed, adr/modular_nine.md 9.10) |
 | `tools_reload` | — | stub: answers an error naming the removal |
 | `tool_delete` | `tool_name` (**required**) | delete a tool Nine wrote, and its standing run; a shipped, operator-installed or unknown tool is refused with the reason |
@@ -100,7 +101,12 @@ Msg {
 | `grants_decide` | `request_id`, `text` | settle a capability request (`approve`/`deny`) or revoke a grant (`revoke`). Both fields are required: a decision with no id, or an id with no verb, **MUST NOT** resolve to a default |
 | `list_skills` | — | the skill catalog, without bodies |
 | `skill_get` | `text` = skill name (**required**) | one skill with its body |
-| `backup` | (`text` = `workspace`) | write a snapshot of the store, with the workspace when asked, to a temporary file |
+| `skill_create` | `text` = JSON `{name, description, tags, content}` (**required**) | write a new skill into the catalog — operator-only, never an agent tool (adr/agents-concept.md A8, Q23); a name owned by a builtin or user source file is refused |
+| `skill_update` | `id` = skill name, `text` = JSON patch (both **required**) | change a skill's `description` / `tags` / `content`; same ownership rules as `skill_create` |
+| `skill_delete` | `id` = skill name (**required**) | remove one skill from the catalog; source-owned (builtin/user) skills are refused |
+| `memory_set` | `text` = JSON `{key, value}` (**required**) | write one key of the key-value memory — operator-only over REST (A8), the same store row the model's `memory_set` tool writes in a turn |
+| `memory_delete` | `text` = key (**required**) | remove one key of the key-value memory |
+| `backup` | (`text` = `workspace`) | write a snapshot of every database — the registry plus each agent's own db (`nine.db`, `agents/<id>.db`) — with the workspace when asked, to a temporary file |
 | `workspace` | `text` = `list` \| `read` \| `write` \| `delete` (**required**), `tool_input` = JSON `WorkspaceArgs { path, content, if_version }` | a workspace file operation as the operator. Paths resolve inside the workspace root, links included; `.nine/` is refused. A replaced or deleted file **MUST** go to the trash. With `if_version`, a write or delete of a file at another version **MUST** fail. |
 | `database` | `text` = `tables` \| `rows` \| `insert` \| `update` \| `delete` \| `run` (**required**), `tool_input` = JSON `DatabaseArgs { table, offset, limit, rowid, values, sql, args }` | a database operation as the operator, under the database policy; never the store. Writes are journaled as `sql_write` under `operator`. |
 | `goal_create` | `text` = description (**required**), (`id` = parent goal) | create a goal as the operator; a top-level goal gets a pursue session (R-PROTO.13) |
@@ -112,6 +118,15 @@ Msg {
 | `turn_cancel` | `agent_id` (**required**) | cancel the turn the session is running; the session stays (R-PROTO.16) |
 | `journal_follow` | (`after`), (`limit`) | follow the whole journal on this connection until it closes, after `seq` `after`; with none, from now with up to `limit` earlier events (R-PROTO.15) |
 | `list_human_requests` | — | the `ask_human` questions still waiting for an answer |
+| `agent_list` | — | the stored agent definitions (adr/agents-concept.md A5) |
+| `agent_get` | `id` = agent id (**required**) | one agent definition with its current version |
+| `agent_create` | `text` = JSON `AgentDefinition` (**required**) | create a stored agent; `name` required, `skills` a JSON array of strings |
+| `agent_update` | `id` = agent id, `text` = JSON patch (both **required**) | change fields of one agent (`name`/`role`/`skills`/`self_model`/`reflection`); bumps the version and records it |
+| `agent_delete` | `id` = agent id (**required**) | delete one agent and its version history |
+| `agent_run` | `id` = agent id (**required**), (`interactive` flag) | start a conversation from the agent — its role names the conversation's role; the reply carries the conversation id; a staged (imported, unapproved) agent is refused |
+| `agent_export` | `id` = agent id (**required**) | export the agent as a bundle tar: an `agent.json` manifest plus the agent's own database as `agent.db` |
+| `agent_import` | `text` = JSON `AgentImportRequest { tar_base64 }` (**required**) | import a bundle; the agent is created **staged** and journaled, runnable only after `agent_approve` |
+| `agent_approve` | `id` = agent id (**required**) | approve a staged agent (staged → active), journaled |
 
 `plugin_call` (R-PROTO.5) is the only way to reach a tool without an agent loop; the CLI
 uses it for `nine workflow fail` when the daemon is up and for diagnostics.
@@ -130,7 +145,7 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `done` | `agent_id` | turn complete |
 | `error` | `text` | failure |
 | `status` / `list_*` | `text` = JSON payload | the requested read (StatusInfo / array) |
-| `plugins_list` / `plugins_reload` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
+| `plugins_list` / `plugins_reload` / `plugin_install` | `text` = JSON `[]PluginStatus` | the plugin roster (each: `name`, `source`, `loaded`, `tools`, `error`) |
 | `tools_list` / `tools_reload` | `text` = JSON `[]` / an error | stubs; see R-PROTO.4a |
 | `grants_list` | `text` = JSON `CapabilityState` | grants in force, each with its `source`, plus every capability request and its status (plugin.md) |
 | `grants_decide` | `text` = a sentence | what the decision did, including whether it took effect without a restart |
@@ -150,6 +165,8 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `set_plan_mode` | `text` = `"plan mode: <mode>"` | mode change acknowledged (or `error` on an unknown mode) |
 | `list_skills` | `text` = JSON `{"skills": []SkillInfo}` | `SkillInfo { name, description, tags, source }`; `source` is `builtin`, `user` or `agent` |
 | `skill_get` | `text` = JSON `SkillDetail` | `SkillInfo` plus `content`, the skill's Markdown body; an unknown name is `error` "… not found" |
+| `skill_create` / `skill_update` | `text` = JSON `SkillDetail` | the skill as stored after the write; refusals are `error` (source-owned or unknown name, empty name, empty patch) |
+| `skill_delete` / `memory_set` / `memory_delete` | `text` = a sentence | what was done (or `error` naming the reason) |
 | `workspace` | `text` = JSON | `WorkspaceListing { path, entries }` for `list`, `WorkspaceFile` (an entry with `content`, base64) for `read`, `WorkspaceEntry { name, path, dir, bytes, modified, version, trashed }` for `write` and `delete`. A missing path is `error` "not found: …"; a stale version "… the file changed since it was read" |
 | `database` | `text` = JSON | `{"tables": []Table}` for `tables`; a page `{ table, columns, rowids, rows, total, offset }` for `rows`; `{ columns, rows, truncated, write, changes, last_insert_rowid }` otherwise. An unknown table is `error` "table not found: …" |
 | `backup` | `text` = JSON `BackupResult` | `{ path, name, bytes, files, skipped }`: a temporary file in a `nine-backup-*` directory, which the caller streams and removes with the directory; one left over an hour is swept by the next backup |
@@ -162,6 +179,13 @@ uses it for `nine workflow fail` when the daemon is up and for diagnostics.
 | `turn_cancel` | `text` = `cancelled` \| `idle` | a running turn was cancelled, or the session was idle (or `error` when the session is unknown) |
 | `journal_follow` | `after`, (`status` = `reset`) | follow accepted, starting after `after`; then one per batch with `text` = JSON `[]JournalEvent` (R-PROTO.15) |
 | `list_human_requests` | `text` = JSON `[]PendingQuestion` | `{ id, agent_id, question, options, created_at, expires_at }`, oldest first; one past its deadline is left out |
+| `agent_list` | `text` = JSON `[]Agent` | every stored agent: `{ id, version, definition, created_at, updated_at }`, oldest first |
+| `agent_get` / `agent_create` / `agent_update` | `text` = JSON `Agent` | the one agent (or `error` "… not found" for get/update/delete) |
+| `agent_delete` | `text` = `deleted <id>` | deletion result (or `error` "… not found") |
+| `agent_run` | `text` = JSON `AgentRunResult` | `{ agent_id, conversation_id, role }`: the conversation started from the agent and its resolved role |
+| `agent_export` | `text` = JSON `AgentExportResult` | `{ filename, tar_base64 }`: the bundle tar, base64 |
+| `agent_import` | `text` = JSON `Agent` | the imported agent, staged (or `error` on a bad bundle / unknown role) |
+| `agent_approve` | `text` = JSON `Agent` | the approved agent, active (or `error` "… not found") |
 
 **Streaming progress** (emitted during a turn, before `response`+`done`):
 
@@ -228,7 +252,17 @@ PluginStatus { name string, source string, loaded bool, tools []string, error st
 
 `plugins_reload` re-scans `[plugins].user_dir` (stopping and restarting only user
 plugins) before returning the resulting roster; both are operator reads/actions,
-never agent tools.
+never agent tools. `plugin_install` answers the same roster shape after landing and
+loading the submitted files, or `error` with the refusal reason (unsafe path, missing
+or duplicate manifest, disabled name, existing file, failed MCP handshake, tool
+collision).
+
+The operator-only write verbs (adr/agents-concept.md A8, Q23) — `skill_create` /
+`skill_update` / `skill_delete`, `memory_set` / `memory_delete`, and the `agent_*`
+verbs above — reach the same store rows the model's own tools write; one store, two
+front doors. They are dispatched only for operator connections, never as agent tools,
+and the daemon enforces source ownership: builtin and user skills are read-only to
+them (`error` naming the owner).
 
 ### R-PROTO.4a — sandboxed tool roster — removed
 

@@ -86,6 +86,9 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 
 	TypePluginCall:       {required: []fieldRule{needToolName}},
 	TypeHumanInputAnswer: {required: []fieldRule{needRequestID}},
+	// The files payload is required: an install with no manifest is refused by
+	// the daemon, but an empty text is a malformed request, not an install.
+	TypePluginInstall: {required: []fieldRule{needText}},
 
 	// Both are required: a decision with no id, or an id with no verb, must not
 	// resolve to a default. Widening a capability ceiling is not a place for one.
@@ -96,7 +99,15 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	// An empty status must not reach the store, which accepts any string.
 	TypeGoalSetStatus: {required: []fieldRule{needID, needText}},
 	TypeSkillGet:      {required: []fieldRule{needText}},
+	// The operator REST writes (adr/agents-concept.md A8, Q23): the payloads
+	// are required — an empty create or set is a malformed request, not a
+	// silent no-op.
+	TypeSkillCreate:   {required: []fieldRule{needText}},
+	TypeSkillUpdate:   {required: []fieldRule{needID, needText}},
+	TypeSkillDelete:   {required: []fieldRule{needID}},
 	TypeMemoryGet:     {required: []fieldRule{needText}},
+	TypeMemorySet:     {required: []fieldRule{needText}},
+	TypeMemoryDelete:  {required: []fieldRule{needText}},
 	// The action, as for process_control: no verb must not default to one.
 	TypeWorkspace: {required: []fieldRule{needText}},
 	TypeDatabase:  {required: []fieldRule{needText}},
@@ -107,6 +118,17 @@ var clientMsgSpecs = map[MsgType]clientMsgSpec{
 	TypeSessionEvents:  {required: []fieldRule{needAgentID}},
 	TypeWatch:          {required: []fieldRule{needAgentID}},
 	TypeTurnCancel:     {required: []fieldRule{needAgentID}},
+
+	// Agent verbs: every one but the list names its agent in id; create/update
+	// also carry their JSON payload in text.
+	TypeAgentGet:    {required: []fieldRule{needID}},
+	TypeAgentCreate: {required: []fieldRule{needText}},
+	TypeAgentUpdate: {required: []fieldRule{needID, needText}},
+	TypeAgentDelete: {required: []fieldRule{needID}},
+	TypeAgentRun:    {required: []fieldRule{needID}},
+	TypeAgentExport: {required: []fieldRule{needID}},
+	TypeAgentImport: {required: []fieldRule{needText}},
+	TypeAgentApprove: {required: []fieldRule{needID}},
 }
 
 // ValidateClient checks an inbound client message carries what its type needs.

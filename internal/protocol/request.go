@@ -95,12 +95,35 @@ type RolesListReq struct{}
 
 type BoardListReq struct{ Status string }
 type BoardGetReq struct{ ID string }
-type BoardCreateReq struct{ Title, Spec string; Priority int; PostedBy string }
+type BoardCreateReq struct{ Title, Spec, Role string; Priority int; PostedBy string }
 type BoardUpdateReq struct {
 	ID    string
 	Patch map[string]json.RawMessage
 }
 type BoardDeleteReq struct{ ID string }
+
+// PluginInstallReq carries a plugin's files (relpath → base64) in the
+// operator-only plugin_install verb (adr/agents-concept.md A7).
+type PluginInstallReq struct{ Files map[string]string }
+
+// Agent verbs (adr/agents-concept.md A5): stored agent definitions, composed and
+// run through the daemon. Create and update carry their payload as JSON in Text;
+// get, update, delete and run carry the agent id in ID.
+type AgentListReq struct{}
+type AgentGetReq struct{ ID string }
+type AgentCreateReq struct{ Definition json.RawMessage }
+type AgentUpdateReq struct {
+	ID    string
+	Patch json.RawMessage
+}
+type AgentDeleteReq struct{ ID string }
+type AgentRunReq struct {
+	ID          string
+	Interactive bool
+}
+type AgentExportReq struct{ ID string }
+type AgentImportReq struct{ Bundle json.RawMessage }
+type AgentApproveReq struct{ ID string }
 
 // ToolDeleteReq deletes a tool Nine wrote; any other tool is refused.
 type ToolDeleteReq struct {
@@ -191,8 +214,35 @@ type DatabaseReq struct {
 // SkillGetReq asks for one skill with its body.
 type SkillGetReq struct{ Name string }
 
+// SkillCreateReq writes a new skill (operator REST only, adr/agents-concept.md
+// A8, Q23 — the model's skill_write calls the same store layer).
+type SkillCreateReq struct {
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Tags        []string `json:"tags"`
+	Content     string   `json:"content"`
+}
+
+// SkillUpdateReq patches one skill; Patch carries the JSON fields to change.
+type SkillUpdateReq struct {
+	ID    string
+	Patch map[string]json.RawMessage
+}
+
+// SkillDeleteReq deletes one skill by name.
+type SkillDeleteReq struct{ ID string }
+
 // MemoryGetReq asks for one key of the key-value memory, with its value.
 type MemoryGetReq struct{ Key string }
+
+// MemorySetReq sets one key of the key-value memory (operator REST only).
+type MemorySetReq struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
+// MemoryDeleteReq deletes one key of the key-value memory.
+type MemoryDeleteReq struct{ Key string }
 
 // GoalSetStatusReq sets a goal's status as the operator.
 type GoalSetStatusReq struct {
@@ -247,6 +297,16 @@ func (BoardGetReq) Type() MsgType          { return TypeBoardGet }
 func (BoardCreateReq) Type() MsgType       { return TypeBoardCreate }
 func (BoardUpdateReq) Type() MsgType       { return TypeBoardUpdate }
 func (BoardDeleteReq) Type() MsgType       { return TypeBoardDelete }
+func (PluginInstallReq) Type() MsgType     { return TypePluginInstall }
+func (AgentListReq) Type() MsgType         { return TypeAgentList }
+func (AgentGetReq) Type() MsgType          { return TypeAgentGet }
+func (AgentCreateReq) Type() MsgType       { return TypeAgentCreate }
+func (AgentUpdateReq) Type() MsgType       { return TypeAgentUpdate }
+func (AgentDeleteReq) Type() MsgType       { return TypeAgentDelete }
+func (AgentRunReq) Type() MsgType          { return TypeAgentRun }
+func (AgentExportReq) Type() MsgType       { return TypeAgentExport }
+func (AgentImportReq) Type() MsgType       { return TypeAgentImport }
+func (AgentApproveReq) Type() MsgType      { return TypeAgentApprove }
 func (RolesListReq) Type() MsgType         { return TypeRolesList }
 func (ToolCallReq) Type() MsgType          { return TypeToolCall }
 func (ToolDeleteReq) Type() MsgType        { return TypeToolDelete }
@@ -262,7 +322,12 @@ func (GoalCreateReq) Type() MsgType        { return TypeGoalCreate }
 func (GoalDeleteReq) Type() MsgType        { return TypeGoalDelete }
 func (GoalSetStatusReq) Type() MsgType     { return TypeGoalSetStatus }
 func (SkillGetReq) Type() MsgType          { return TypeSkillGet }
+func (SkillCreateReq) Type() MsgType       { return TypeSkillCreate }
+func (SkillUpdateReq) Type() MsgType       { return TypeSkillUpdate }
+func (SkillDeleteReq) Type() MsgType       { return TypeSkillDelete }
 func (MemoryGetReq) Type() MsgType         { return TypeMemoryGet }
+func (MemorySetReq) Type() MsgType         { return TypeMemorySet }
+func (MemoryDeleteReq) Type() MsgType      { return TypeMemoryDelete }
 func (BackupReq) Type() MsgType            { return TypeBackup }
 func (WorkspaceReq) Type() MsgType         { return TypeWorkspace }
 func (DatabaseReq) Type() MsgType          { return TypeDatabase }
@@ -328,17 +393,42 @@ func DecodeRequest(m Msg) (Request, error) {
 		var cs struct {
 			Title    string `json:"title"`
 			Spec     string `json:"spec"`
+			Role     string `json:"role"`
 			Priority int    `json:"priority"`
 			PostedBy string `json:"posted_by"`
 		}
 		_ = json.Unmarshal([]byte(m.Text), &cs)
-		return BoardCreateReq{Title: cs.Title, Spec: cs.Spec, Priority: cs.Priority, PostedBy: cs.PostedBy}, nil
+		return BoardCreateReq{Title: cs.Title, Spec: cs.Spec, Role: cs.Role, Priority: cs.Priority, PostedBy: cs.PostedBy}, nil
 	case TypeBoardUpdate:
 		var patch map[string]json.RawMessage
 		_ = json.Unmarshal([]byte(m.Text), &patch)
 		return BoardUpdateReq{ID: m.ID, Patch: patch}, nil
 	case TypeBoardDelete:
 		return BoardDeleteReq{ID: m.ID}, nil
+	case TypePluginInstall:
+		var pl struct {
+			Files map[string]string `json:"files"`
+		}
+		_ = json.Unmarshal([]byte(m.Text), &pl)
+		return PluginInstallReq{Files: pl.Files}, nil
+	case TypeAgentList:
+		return AgentListReq{}, nil
+	case TypeAgentGet:
+		return AgentGetReq{ID: m.ID}, nil
+	case TypeAgentCreate:
+		return AgentCreateReq{Definition: json.RawMessage(m.Text)}, nil
+	case TypeAgentUpdate:
+		return AgentUpdateReq{ID: m.ID, Patch: json.RawMessage(m.Text)}, nil
+	case TypeAgentDelete:
+		return AgentDeleteReq{ID: m.ID}, nil
+	case TypeAgentRun:
+		return AgentRunReq{ID: m.ID, Interactive: m.Interactive}, nil
+	case TypeAgentExport:
+		return AgentExportReq{ID: m.ID}, nil
+	case TypeAgentImport:
+		return AgentImportReq{Bundle: json.RawMessage(m.Text)}, nil
+	case TypeAgentApprove:
+		return AgentApproveReq{ID: m.ID}, nil
 	case TypeRolesList:
 		return RolesListReq{}, nil
 	case TypeToolDelete:
@@ -372,8 +462,24 @@ func DecodeRequest(m Msg) (Request, error) {
 		return GoalSetStatusReq{ID: m.ID, Status: m.Text}, nil
 	case TypeSkillGet:
 		return SkillGetReq{Name: m.Text}, nil
+	case TypeSkillCreate:
+		var cs SkillCreateReq
+		_ = json.Unmarshal([]byte(m.Text), &cs)
+		return cs, nil
+	case TypeSkillUpdate:
+		var patch map[string]json.RawMessage
+		_ = json.Unmarshal([]byte(m.Text), &patch)
+		return SkillUpdateReq{ID: m.ID, Patch: patch}, nil
+	case TypeSkillDelete:
+		return SkillDeleteReq{ID: m.ID}, nil
 	case TypeMemoryGet:
 		return MemoryGetReq{Key: m.Text}, nil
+	case TypeMemorySet:
+		var ms MemorySetReq
+		_ = json.Unmarshal([]byte(m.Text), &ms)
+		return ms, nil
+	case TypeMemoryDelete:
+		return MemoryDeleteReq{Key: m.Text}, nil
 	case TypeBackup:
 		return BackupReq{Workspace: m.Text == BackupWorkspace}, nil
 	case TypeWorkspace:

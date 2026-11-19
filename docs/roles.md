@@ -46,7 +46,10 @@ privileged role, not a minimal one — write the allowlist deliberately.
 `orchestrator` is the session that follows your conversation, and the default
 agent for a new one (the web UI's new-conversation picker and
 `POST /api/v1/conversations` `role` field choose it; `GET /api/v1/roles` lists
-the registry). It plans and dispatches rather than doing the work itself: its
+the registry). Operators also create, edit and delete roles over REST —
+`POST /api/v1/roles`, `PATCH|DELETE /api/v1/roles/{name}` (adr/agents-concept.md
+A8, Q23) — which composes the role skill's Markdown and writes the same store
+row; builtin and user roles stay read-only. It plans and dispatches rather than doing the work itself: its
 allowlist is the orchestration set — `board_*`, `run_agent(s)`,
 `role_list`/`role_search`, `tool_list`/`tool_search`, the memory group,
 `doc_*`/`skill_read`, queued messages, `notify_user`, `agent_stop`, and the

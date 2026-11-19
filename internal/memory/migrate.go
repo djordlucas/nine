@@ -449,6 +449,35 @@ var migrations = []migrationStep{
 	{name: "board_tasks_priority", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "board_tasks", "priority", "INTEGER NOT NULL DEFAULT 0")
 	}},
+	// Agents gain a status column (active | staged — an imported agent is staged
+	// until approved, adr/agents-concept.md Q30), and conversations record the
+	// agent they were run from, if any.
+	{name: "agents_status_conversations_agent", fn: func(q sqlExec) error {
+		if err := addColumnIfMissing(q, "agents", "status", "TEXT NOT NULL DEFAULT 'active'"); err != nil {
+			return err
+		}
+		return addColumnIfMissing(q, "conversations", "agent_id", "TEXT NOT NULL DEFAULT ''")
+	}},
+	{name: "session_index", fn: func(q sqlExec) error {
+		_, err := q.Exec(`CREATE TABLE IF NOT EXISTS session_index (
+			id         TEXT PRIMARY KEY,
+			agent_id   TEXT NOT NULL DEFAULT '',
+			status     TEXT NOT NULL DEFAULT 'active',
+			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,
+			updated_at TEXT NOT NULL DEFAULT ` + nowExpr + `
+		)`)
+		if err != nil {
+			return err
+		}
+		_, err = q.Exec(`CREATE INDEX IF NOT EXISTS session_index_agent ON session_index (agent_id)`)
+		return err
+	}},
+	// 26 → 27: a board task may name the leaf role its worker runs as
+	// (adr/agents-concept.md A6, Q15 — fixed at post time); '' means the
+	// claiming worker's own process role (Q17).
+	{name: "board_tasks_role", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "board_tasks", "role", "TEXT NOT NULL DEFAULT ''")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

@@ -127,19 +127,50 @@ func (d *Dispatcher) SetJobStarter(js JobStarter) { d.jobs = js }
 // RegisterPlugin indexes all tools advertised by p so they can be dispatched.
 func (d *Dispatcher) RegisterPlugin(m *plugin.Manager, p *plugin.Plugin) {
 	for _, t := range p.Tools {
-		toolName := t.Name
-		pp := p
-		d.declareRefParams(toolName, t.InputSchema)
-		d.backends[toolName] = "plugin"
-		d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
-			cr, err := m.Call(ctx, pp, toolName, args)
-			if err != nil {
-				return "", err
+		d.registerPluginTool(m, p, t)
+	}
+}
+
+func (d *Dispatcher) registerPluginTool(m *plugin.Manager, p *plugin.Plugin, t plugin.ToolDefinition) {
+	toolName := t.Name
+	pp := p
+	d.declareRefParams(toolName, t.InputSchema)
+	d.backends[toolName] = "plugin"
+	d.handlers[toolName] = func(ctx context.Context, args json.RawMessage) (string, error) {
+		cr, err := m.Call(ctx, pp, toolName, args)
+		if err != nil {
+			return "", err
+		}
+		if cr.JobID != "" {
+			return "", fmt.Errorf("plugin %q returned a job id but jobs are suspended (adr/modular_nine.md P4)", pp.Name)
+		}
+		return cr.Output, nil
+	}
+}
+
+// RefreshPlugins replaces every plugin-backed handler with those of the
+// manager's currently running plugins. It is the dispatch half of per-turn
+// live grants (adr/agents-concept.md A7, Q32): called between turns, never
+// mid-turn, so a call always sees one whole generation of handlers — old or
+// new, never a gap. allow, when non-nil, is the role's plugin-tool filter, so
+// a newly installed tool outside the role's set is never callable even though
+// it is not advertised (R-ROLE.4 boundary 2 holds across a refresh).
+func (d *Dispatcher) RefreshPlugins(m *plugin.Manager, allow func(name string) bool) {
+	for name, backend := range d.backends {
+		if backend == "plugin" {
+			delete(d.handlers, name)
+			delete(d.backends, name)
+		}
+	}
+	for _, p := range m.Running() {
+		if p == nil {
+			continue
+		}
+		for _, t := range p.Tools {
+			if allow != nil && !allow(t.Name) {
+				continue
 			}
-			if cr.JobID != "" {
-				return "", fmt.Errorf("plugin %q returned a job id but jobs are suspended (adr/modular_nine.md P4)", pp.Name)
-			}
-			return cr.Output, nil
+			d.registerPluginTool(m, p, t)
 		}
 	}
 }

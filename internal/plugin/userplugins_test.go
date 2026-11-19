@@ -160,3 +160,107 @@ func TestReloadUserPluginsRemoves(t *testing.T) {
 	}
 	_ = m.StopAll()
 }
+
+// installFiles builds the file set for installing the testplugin fixture under
+// name, with a relative entrypoint.
+func installFiles(t *testing.T, name, bin string) map[string][]byte {
+	t.Helper()
+	raw, err := os.ReadFile(bin)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return map[string][]byte{
+		name + ".toml": []byte(fmt.Sprintf("name = %q\nentrypoint = %q\n", name, "./"+name+"-bin")),
+		name + "-bin":  raw,
+	}
+}
+
+// TestInstallUserPlugin covers the runtime install (adr/agents-concept.md A7,
+// Q19/Q20): files land in the user dir, pass the probe + collision vetting and
+// the post-start health gate, and load on the spot.
+func TestInstallUserPlugin(t *testing.T) {
+	bin := buildBinary(t, "./internal/plugin/testplugin")
+	dir := t.TempDir()
+	m := plugin.NewManager("")
+	m.LoadUserPlugins(dir) // empty dir: nothing running
+
+	name, err := m.InstallUserPlugin(installFiles(t, "weather", bin))
+	if err != nil {
+		t.Fatalf("install: %v", err)
+	}
+	if name != "weather" {
+		t.Fatalf("name = %q", name)
+	}
+	st, ok := statusByName(m.UserStatus(), "weather")
+	if !ok || !st.Loaded {
+		t.Fatalf("weather not loaded: %+v", st)
+	}
+	// The files are in place and the plugin runs.
+	if _, err := os.Stat(filepath.Join(dir, "weather.toml")); err != nil {
+		t.Fatalf("manifest not in user dir: %v", err)
+	}
+	found := false
+	for _, p := range m.Running() {
+		// The running plugin is named after its binary, not the manifest.
+		if p.User && p.Name == "weather-bin" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("weather not running after install")
+	}
+	_ = m.StopAll()
+}
+
+// TestInstallUserPluginRefusals: each guard refuses before anything lands in
+// the user dir — unsafe path, missing manifest, disabled name, existing file,
+// non-MCP binary, and a tool collision with an already-running plugin.
+func TestInstallUserPluginRefusals(t *testing.T) {
+	bin := buildBinary(t, "./internal/plugin/testplugin")
+	dir := t.TempDir()
+	m := plugin.NewManager("")
+	m.LoadUserPlugins(dir)
+
+	// A first plugin loads, owning the testplugin's tools.
+	if _, err := m.InstallUserPlugin(installFiles(t, "first", bin)); err != nil {
+		t.Fatalf("install first: %v", err)
+	}
+
+	cases := []struct {
+		name  string
+		files map[string][]byte
+		want  string
+	}{
+		{"unsafe path", map[string][]byte{"../evil.toml": []byte("name=\"x\"\nentrypoint=\"./b\"\n")}, "unsafe path"},
+		{"no manifest", map[string][]byte{"bin": []byte("x")}, "manifest"},
+		{"two manifests", map[string][]byte{"a.toml": []byte("x"), "b.toml": []byte("x")}, "one manifest"},
+		{"existing file", map[string][]byte{"first.toml": []byte("x"), "other-bin": []byte("x")}, "already exists"},
+		{"not an mcp plugin", map[string][]byte{"bad.toml": []byte("name = \"bad\"\nentrypoint = \"./bad-bin\"\n"), "bad-bin": []byte("#!/bin/sh\nexit 0\n")}, "not a valid MCP plugin"},
+		{"tool collision", installFiles(t, "second", bin), "already provided by"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if _, err := m.InstallUserPlugin(tc.files); err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("install %s: err=%v, want %q", tc.name, err, tc.want)
+			}
+		})
+	}
+
+	// Disabled by config: refused before any file is written.
+	m.SetDisabled([]string{"off"})
+	if _, err := m.InstallUserPlugin(installFiles(t, "off", bin)); err == nil || !strings.Contains(err.Error(), "disabled") {
+		t.Fatalf("install disabled: err=%v", err)
+	}
+
+	// A refused install leaves nothing behind: only the first plugin's files.
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, e := range entries {
+		if strings.HasPrefix(e.Name(), ".install-") || e.Name() == "second.toml" || e.Name() == "bad.toml" || e.Name() == "off.toml" {
+			t.Fatalf("refused install left %s behind", e.Name())
+		}
+	}
+	_ = m.StopAll()
+}

@@ -23,7 +23,7 @@ func testBoardControl(t *testing.T, maxQueued int) (boardControl, *memory.Store)
 func TestBoardControlLifecycle(t *testing.T) {
 	bc, store := testBoardControl(t, 10)
 
-	t1, err := bc.Post("conv1", "Fix the queue", "investigate INC-1", 0)
+	t1, err := bc.Post("conv1", "Fix the queue", "investigate INC-1", "", 0)
 	if err != nil {
 		t.Fatalf("post: %v", err)
 	}
@@ -73,7 +73,7 @@ func TestBoardControlLifecycle(t *testing.T) {
 	}
 
 	// Cancel by the poster; a stranger cannot.
-	t2, _ := bc.Post("conv1", "Second", "spec", 0)
+	t2, _ := bc.Post("conv1", "Second", "spec", "", 0)
 	if _, err := bc.Cancel("worker-a", t2.ID); err == nil {
 		t.Fatal("cancel by non-poster: want refusal")
 	}
@@ -91,27 +91,27 @@ func TestBoardControlGuards(t *testing.T) {
 	bc, _ := testBoardControl(t, 2)
 
 	// Queue cap: two open tasks allowed, third refused.
-	if _, err := bc.Post("conv1", "one", "", 0); err != nil {
+	if _, err := bc.Post("conv1", "one", "", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bc.Post("conv1", "two", "", 0); err != nil {
+	if _, err := bc.Post("conv1", "two", "", "", 0); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := bc.Post("conv1", "three", "", 0); err == nil || !strings.Contains(err.Error(), "max_queued") {
+	if _, err := bc.Post("conv1", "three", "", "", 0); err == nil || !strings.Contains(err.Error(), "max_queued") {
 		t.Fatalf("third post: err=%v, want max_queued refusal", err)
 	}
 
 	// Duplicate: same poster, same title+spec, while open.
-	if _, err := bc.Post("conv1", "one", "", 0); err == nil || !strings.Contains(err.Error(), "already open") {
+	if _, err := bc.Post("conv1", "one", "", "", 0); err == nil || !strings.Contains(err.Error(), "already open") {
 		t.Fatalf("duplicate post: err=%v, want alike refusal", err)
 	}
 	// A different poster may post the same text.
-	if _, err := bc.Post("conv2", "one", "", 0); err != nil {
+	if _, err := bc.Post("conv2", "one", "", "", 0); err != nil {
 		t.Fatalf("other poster: err=%v", err)
 	}
 
 	// Empty title refused (store-level).
-	if _, err := bc.Post("conv1", "  ", "", 0); err == nil {
+	if _, err := bc.Post("conv1", "  ", "", "", 0); err == nil {
 		t.Fatal("empty title: want error")
 	}
 }
@@ -127,7 +127,7 @@ func TestBoardDeliveryOnFinish(t *testing.T) {
 	bc.feed = func(text string) { fed = append(fed, text) }
 
 	// A posted task wakes the poster on completion, framed as data.
-	pt, err := bc.Post("orch", "Research X", "spec", 5)
+	pt, err := bc.Post("orch", "Research X", "spec", "", 5)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +197,7 @@ func TestBoardworkerProcessCycle(t *testing.T) {
 
 	// A posted task waiting for a worker.
 	poster := "orch-conv"
-	task, err := bc.Post(poster, "triage incidents", "read notes/incident.md", 0)
+	task, err := bc.Post(poster, "triage incidents", "read notes/incident.md", "", 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -254,7 +254,7 @@ func TestBoardworkerProcessCycle(t *testing.T) {
 	cancelProbe()
 
 	// A failing turn fails the task.
-	task2, _ := bc.Post(poster, "will fail", "spec", 0)
+	task2, _ := bc.Post(poster, "will fail", "spec", "", 0)
 	sessions.fail = errors.New("boom")
 	lp.triggers <- Trigger{Kind: "clock"}
 	trig2, err := h.Next(ctx)
@@ -268,5 +268,108 @@ func TestBoardworkerProcessCycle(t *testing.T) {
 	failed, _, _ := store.BoardTaskGet(task2.ID)
 	if failed.Status != memory.BoardFailed || !strings.Contains(failed.Result, "boom") {
 		t.Fatalf("failed task: %+v", failed)
+	}
+}
+
+// TestBoardPostRoleAdmission: a task-named role is admitted only when it
+// exists and is a leaf (adr/agents-concept.md A6, Q16/Q18) — the same set
+// run_agent offers as delegation targets.
+func TestBoardPostRoleAdmission(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bc := boardControl{store: store, maxDepth: 2, maxQueued: 10, roles: NewRoleRegistry(nil, "")}
+
+	// A leaf role is accepted and recorded on the task.
+	task, err := bc.Post("conv1", "research it", "spec", "executor", 0)
+	if err != nil {
+		t.Fatalf("post with leaf role: %v", err)
+	}
+	if task.Role != "executor" {
+		t.Fatalf("task role = %q, want executor", task.Role)
+	}
+
+	// A non-leaf role (orchestrator spawns goals and persists) is refused.
+	if _, err := bc.Post("conv1", "plan it", "spec", "orchestrator", 0); err == nil ||
+		!strings.Contains(err.Error(), "not a leaf") {
+		t.Fatalf("post with non-leaf role: err=%v", err)
+	}
+	// An unknown role is refused the same way.
+	if _, err := bc.Post("conv1", "mystery", "spec", "no-such-role", 0); err == nil ||
+		!strings.Contains(err.Error(), "not a leaf") {
+		t.Fatalf("post with unknown role: err=%v", err)
+	}
+	// Empty keeps the worker's own role (Q17) and is always admitted.
+	if _, err := bc.Post("conv1", "plain", "spec", "", 0); err != nil {
+		t.Fatalf("post without role: %v", err)
+	}
+}
+
+// TestBoardworkerClaimRoleResolution: a claimed task that names a role runs
+// its turn under that role (Q15); an unnamed task runs under the worker's own
+// process role (Q17).
+func TestBoardworkerClaimRoleResolution(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewStandingRunner(store, 1, 2)
+	sessions := &fakeSessions{}
+	r.SetSessions(sessions)
+	bc := boardControl{store: store, maxDepth: 2, maxQueued: 100, roles: NewRoleRegistry(nil, "")}
+	r.SetBoard(&bc)
+
+	named, err := bc.Post("poster", "named task", "spec", "executor", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	plain, err := bc.Post("poster", "plain task", "spec", "", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	row := memory.Process{ID: "board-1", Tool: "boardworker", Mode: memory.ProcessLive,
+		SessionID: "board-1", Owner: true, State: memory.ProcessRunning, Role: "worker-role"}
+	lp := &liveProc{row: row, triggers: make(chan Trigger, 8)}
+	h := &liveHandler{r: r, lp: lp}
+	ctx := context.Background()
+
+	// The named task (higher rowid ordering aside, claim oldest first: named
+	// was posted first) runs under the task's role, not the process's.
+	lp.triggers <- Trigger{Kind: "clock"}
+	trig, err := h.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trig.BoardTask != named.ID {
+		t.Fatalf("claimed %s, want %s (oldest first)", trig.BoardTask, named.ID)
+	}
+	if _, err := h.Turn(ctx, trig.Text); err != nil {
+		t.Fatal(err)
+	}
+	// The unnamed task keeps the worker's own process role.
+	lp.triggers <- Trigger{Kind: "clock"}
+	trig2, err := h.Next(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if trig2.BoardTask != plain.ID {
+		t.Fatalf("claimed %s, want %s", trig2.BoardTask, plain.ID)
+	}
+	if _, err := h.Turn(ctx, trig2.Text); err != nil {
+		t.Fatal(err)
+	}
+
+	sessions.mu.Lock()
+	defer sessions.mu.Unlock()
+	if len(sessions.roles) != 2 {
+		t.Fatalf("turns recorded: %v", sessions.roles)
+	}
+	if sessions.roles[0] != "executor" {
+		t.Fatalf("named task ran as %q, want executor", sessions.roles[0])
+	}
+	if sessions.roles[1] != "worker-role" {
+		t.Fatalf("plain task ran as %q, want the worker's own worker-role", sessions.roles[1])
 	}
 }

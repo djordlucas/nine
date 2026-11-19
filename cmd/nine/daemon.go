@@ -45,14 +45,16 @@ func runDaemon() {
 		slog.Error("failed to resolve memory store path", "err", err)
 		os.Exit(1)
 	}
-	store, err := memory.Open(dbPath)
+	// Per-agent layout (adr/agents-concept.md A4): the registry db at
+	// [memory].path plus one db per agent under agents/ beside it; idle agent
+	// dbs are LRU-closed beyond [memory] max_open_agents (Q35).
+	stores, err := memory.OpenAgentStores(dbPath, cfg.Memory.MaxOpenAgents)
 	if err != nil {
 		slog.Error("failed to open memory store", "path", dbPath, "err", err)
 		os.Exit(1)
 	}
-	// Closing checkpoints the write-ahead log, so the database file is left
-	// self-contained rather than depending on its -wal sidecar to be complete.
-	defer store.Close() //nolint:errcheck
+	defer stores.Close() //nolint:errcheck
+	store := stores.Registry()
 
 	// The database: processes' structured memory, a file apart from the store
 	// (adr/process-sessions.md §8).
@@ -185,6 +187,7 @@ func runDaemon() {
 		WorkspaceRoot: cfg.Workspace.Root,
 		SocketPath:    cfg.SocketPath(),
 		Store:         store,
+		AgentStores:   stores,
 		Plugins:       pluginManager,
 		Embedder:      embedder,
 		ContextBudget: cfg.ContextBudget(),
