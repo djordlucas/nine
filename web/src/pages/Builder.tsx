@@ -1,4 +1,3 @@
-import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
@@ -9,6 +8,7 @@ import { Area } from '../components/Area';
 import { Toggle } from '../components/Toggle';
 import { Icon } from '../components/Icon';
 import { ListHead, Split } from '../components/Split';
+import { Blank } from '../components/Blank';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -77,20 +77,7 @@ function dataHref(key: string): string {
   return `/builder/data?key=${encodeURIComponent(key)}`;
 }
 
-/** What a Builder view's pane shows when nothing is selected: a word on what
- * the section is for, so the page is never a bare pane. */
-function Blank({ title, children }: { title: string; children: ComponentChildren }) {
-  return (
-    <article class={`card ${detail.detail}`}>
-      <header class={detail.head}>
-        <div class={detail.title}>
-          <h2>{title}</h2>
-        </div>
-      </header>
-      <p class="muted">{children}</p>
-    </article>
-  );
-}
+
 
 /** Reads a File as a base64 string, in chunks (String.fromCharCode overflows on large buffers). */
 async function fileBase64(f: File): Promise<string> {

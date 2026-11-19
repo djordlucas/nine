@@ -8,6 +8,7 @@ import { Toggle } from '../components/Toggle';
 import { Area } from '../components/Area';
 import { ask } from '../components/Confirm';
 import { ListHead, Split } from '../components/Split';
+import { Blank } from '../components/Blank';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import styles from './Tools.module.css';
@@ -40,7 +41,9 @@ export function ToolsView({ name }: { name?: string }) {
         {name ? (
           <ToolDetail key={name} name={name} onChanged={() => setReloads((n) => n + 1)} />
         ) : (
-          <p class="empty">Choose a tool.</p>
+          <Blank title="Tools">
+            The roster of what running agents can call, with provenance and dependencies. Pick one to inspect it, call it directly, or see its versions.
+          </Blank>
         )}
       </section>
     </Split>
