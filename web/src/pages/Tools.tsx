@@ -384,7 +384,11 @@ export function PluginsView() {
       <header class={detail.head}>
         <div class={detail.title}>
           <h2>Plugins</h2>
-          <span class="muted">Programs that serve tools. Reloading re-reads the plugin directories.</span>
+          <span class="muted">
+            {data
+              ? `${data.length} plugin${data.length === 1 ? '' : 's'} · ${data.filter((p) => p.loaded && !p.disabled).length} loaded`
+              : 'Programs that serve tools. Reloading re-reads the plugin directories.'}
+          </span>
         </div>
         <div class={detail.actions}>
           <input
