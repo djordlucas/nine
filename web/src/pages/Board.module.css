@@ -78,6 +78,11 @@
   font-size: var(--text-md);
 }
 
+/* The button that unfolds the post-a-task form. */
+.newTask {
+  align-self: start;
+}
+
 /* The post-a-task form, as on the other pages. */
 .form {
   display: grid;

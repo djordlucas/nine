@@ -454,7 +454,7 @@ function RolesView({ name }: { name?: string }) {
                   <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
                   <span class={split.name}>{r.name}</span>
                   <span class={split.meta}>
-                    {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null].filter(Boolean).join(' · ')}
+                    {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null, r.description].filter(Boolean).join(' · ')}
                   </span>
                 </a>
               </li>
