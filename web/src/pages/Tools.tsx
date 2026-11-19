@@ -131,6 +131,10 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
   if (error) return <p class="card error">{error}</p>;
   if (t === null) return <p class="empty">No tool {name}. It may have been deleted.</p>;
   if (!t) return <p class="card muted">Loading…</p>;
+  // The shell plugin executes arbitrary commands, so the UI never offers a
+  // direct call for its tools — agents call them with approval, and the
+  // operator runs commands from the CLI on the host.
+  const shellPlugin = t.plugin === 'shell';
 
   const remove = async () => {
     if (!(await ask({ title: `Delete ${name}?`, message: 'Its processes stop and it is gone from every session.', confirm: 'Delete', danger: true }))) return;
@@ -213,7 +217,12 @@ function ToolDetail({ name, onChanged }: { name: string; onChanged: () => void }
           <Json value={t.input_schema} class={styles.code} />
         </details>
       )}
-      {t.loaded !== false && <Call name={name} schema={t.input_schema} sandboxed={t.kind === 'sandboxed' || t.kind === 'generated'} />}
+      {shellPlugin && (
+        <p class={detail.notice} role="status">
+          This tool runs arbitrary shell commands, so it cannot be called from the UI. Agents call it with approval; run commands yourself from the CLI on the host.
+        </p>
+      )}
+      {t.loaded !== false && !shellPlugin && <Call name={name} schema={t.input_schema} sandboxed={t.kind === 'sandboxed' || t.kind === 'generated'} />}
       {t.generated && <Versions name={name} onRestored={onChanged} />}
     </article>
   );

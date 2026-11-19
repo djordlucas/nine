@@ -17,6 +17,18 @@ test('the tool roster groups tools, filters them, and calls one', async ({ page 
   await expect(page.getByRole('status').filter({ hasText: /Returned|Failed/ })).toBeVisible();
 });
 
+test('the shell plugin’s tool cannot be called from the UI', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/builder/tools/shell');
+  await expect(page.getByRole('heading', { name: 'shell', level: 2 })).toBeVisible();
+  await expect(page.getByText(/cannot be called from the UI/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Call', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Arguments as JSON' })).toHaveCount(0);
+  // Another tool still offers the call form.
+  await page.goto('/builder/tools/time');
+  await expect(page.getByRole('button', { name: 'Call', exact: true })).toBeVisible();
+});
+
 test('a call with arguments that are not JSON is refused before it is sent', async ({ page }) => {
   await signIn(page);
   await page.goto('/builder/tools/read_file');
