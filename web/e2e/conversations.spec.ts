@@ -74,9 +74,9 @@ test('a running turn can be stopped, and the session carries on', async ({ page 
   await newConversation(page);
   await send(page, 'go slow');
   await expect(messages(page).getByText(/tick 2/)).toBeVisible();
-  await page.getByRole('button', { name: 'Stop' }).click();
+  await page.getByRole('button', { name: 'Stop', exact: true }).click();
   await expect(messages(page).getByText('Cancelled.')).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Stop' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
   await send(page, 'still there?');
   await expect(messages(page).locator('strong', { hasText: 'still there?' })).toBeVisible();
 });

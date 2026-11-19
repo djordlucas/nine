@@ -31,8 +31,9 @@ test('every section is reachable', async ({ page }) => {
   const sections = ['Agents', 'Builder', 'Inbox', 'Data', 'Journal', 'System'];
   for (const name of sections) {
     // The rail (desktop) and the tab bar (phone) share the name; the hidden one
-    // is not in the accessibility tree, so this finds whichever is shown.
-    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true }).click();
+    // is not in the accessibility tree, so this finds whichever is shown. Not
+    // exact: a waiting Inbox carries a count badge in its link's name.
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name }).click();
     await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
   }
 });

@@ -29,6 +29,8 @@ const paths: Record<IconName, string> = {
   plus: 'M12 5v14M5 12h14',
   prev: 'M15 6l-6 6 6 6',
   next: 'M9 6l6 6-6 6',
+  pencil: 'M4 20l1-4L16 5l3 3L8 19l-4 1zM13 8l3 3',
+  link: 'M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1.5 1.5M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1.5-1.5',
   send: 'M4 12l16-8-6 16-3-7zM11 13l9-9',
 };
 

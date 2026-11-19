@@ -253,3 +253,86 @@
 .cancel:hover {
   background: var(--surface-2);
 }
+
+/* The type filter chips under the list head. */
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.chip {
+  min-height: 28px;
+  padding: 0 var(--space-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-xs);
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ink-text);
+}
+
+/* Row actions: faded out until the row is hovered or focused (opacity keeps
+   them in the accessibility tree, so keyboard and tests can reach them);
+   always shown on a phone, which has no hover. */
+.rowActions {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+
+.rowLine:hover .rowActions,
+.rowLine:focus-within .rowActions {
+  opacity: 1;
+}
+
+@media (max-width: 767px) {
+  .rowActions {
+    opacity: 1;
+  }
+}
+
+.rowActions button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  min-height: 32px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius);
+  background: none;
+  color: var(--text-2);
+  cursor: pointer;
+}
+
+.rowActions button:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.rowActions .danger:hover {
+  color: var(--danger);
+}
+
+.rowLine:has(> .agentRow[aria-current='page']) .rowActions button {
+  color: var(--ink-text);
+}
+
+/* State badge colors: running/active blue, failing red, the rest muted. */
+.stRunning {
+  border-color: #2a6dd6;
+  color: #7db4ff;
+}
+
+.stMuted {
+  color: var(--text-2);
+}

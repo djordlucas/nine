@@ -37,12 +37,12 @@ test('a process is stopped and started from its page', async ({ page, request, i
     await expect(page.getByRole('heading', { name: `goal:${id}`, level: 2 })).toBeVisible();
     await expect(page.getByRole('heading', { name: 'Budget today' })).toBeVisible();
 
-    await page.getByRole('button', { name: 'Stop' }).click();
+    await page.getByRole('button', { name: 'Stop', exact: true }).click();
     await page.getByRole('dialog').getByRole('button', { name: 'Stop' }).click();
     await expect(state(page)).toContainText('stopped');
     await expect(page.getByText('Stopped by the operator.')).toBeVisible();
 
-    await page.getByRole('button', { name: 'Start' }).click();
+    await page.getByRole('button', { name: 'Start', exact: true }).click();
     await expect(state(page)).toContainText('running');
   } finally {
     await deleteGoal(request, id);
@@ -67,7 +67,7 @@ test('pausing a goal stops its process, and resuming it starts it again', async 
     await page.goto(processPage(id));
     await openDetails(page, isMobile);
     await expect(page.getByText(/Stopped by its goal/)).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Start' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Start', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Resume goal' }).click();
     await expect(state(page)).toContainText('running');
   } finally {

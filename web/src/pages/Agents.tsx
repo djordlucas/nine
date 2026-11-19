@@ -6,7 +6,10 @@ import { shortId } from '../journal';
 import { recentEvents } from '../api/events';
 import { headerSlot } from '../headerSlot';
 import { useLive, useRecent } from '../live';
-import { byAttention, processState } from '../processes';
+import { actionsFor, byAttention, processState, type Process } from '../processes';
+import { attentionEvents, loadAttention } from '../inbox';
+import { copyText } from '../clipboard';
+import { ask } from '../components/Confirm';
 import { Chat } from './Chat';
 import { ListHead, Split } from '../components/Split';
 import { Icon } from '../components/Icon';
@@ -142,7 +145,20 @@ type Row = {
   depth?: number;
   parent?: string;
   current: boolean;
+  proc?: Process;
+  status?: string;
+  planMode?: string;
+  protected?: boolean;
+  questions?: number;
+  caps?: number;
 };
+
+/** The badge color for a process state or a conversation status. */
+function stateClass(s: string): string {
+  if (s === 'running' || s === 'active') return styles.stRunning;
+  if (s === 'failing') return detail.failing;
+  return styles.stMuted;
+}
 
 type Sub = { id: string; role?: string; task?: string; status?: string };
 
@@ -186,12 +202,24 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   const [role, setRole] = useState('orchestrator');
   const [picking, setPicking] = useState(false);
   const picker = useRef<HTMLDialogElement>(null);
+  // Row-level tools: a text filter, type chips, and per-row actions.
+  const [filter, setFilter] = useState('');
+  const [chip, setChip] = useState<'all' | 'conversation' | 'process' | 'goal'>('all');
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState('');
+  const renameDialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     const d = picker.current;
     if (!d) return;
     if (picking && !d.open) d.showModal();
     else if (!picking && d.open) d.close();
   }, [picking]);
+  useEffect(() => {
+    const d = renameDialog.current;
+    if (!d) return;
+    if (renaming && !d.open) d.showModal();
+    else if (!renaming && d.open) d.close();
+  }, [renaming]);
   const { data: roles } = useLive(async () => {
     const r = await get(api.GET('/roles', {}), 'the role registry');
     return (r.data ?? []) as { name: string; description?: string }[];
@@ -199,7 +227,10 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   const { data, error: loadError } = useLive(
     async () => {
       const list = (await get(api.GET('/conversations', { params: { query: { limit: 200 } } }), 'conversations')).data ?? [];
-      return [...list].sort((a, b) => (b.updated_at ?? '').localeCompare(a.updated_at ?? ''));
+      // Protected conversations pin to the top; the rest by recency.
+      return [...list].sort(
+        (a, b) => Number(b.protected ?? false) - Number(a.protected ?? false) || (b.updated_at ?? '').localeCompare(a.updated_at ?? ''),
+      );
     },
     ['turn_start', 'turn_end', 'session_created'],
     `${created}:${reloadKey}`,
@@ -224,6 +255,8 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
     async () => (await get(api.GET('/board', { params: { query: { limit: 1000 } } }), 'the board')).data ?? [],
     ['task_*'],
   );
+  // What waits for the operator, per agent: questions and capability requests.
+  const attention = useLive(loadAttention, attentionEvents);
 
   const start = async () => {
     setBusy(true);
@@ -250,13 +283,26 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
       writeCollapsed(next);
       return next;
     });
-  const subRow = (s: Sub, parent: string): Row => ({
+
+  const qByAgent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const q of attention.data?.questions ?? []) if (q.agent_id) m.set(q.agent_id, (m.get(q.agent_id) ?? 0) + 1);
+    return m;
+  }, [attention.data]);
+  const capByAgent = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const r of attention.data?.requests ?? []) if (r.agent_id) m.set(r.agent_id, (m.get(r.agent_id) ?? 0) + 1);
+    return m;
+  }, [attention.data]);
+
+  const subRow = (s: Sub, parent: string, orphan = false): Row => ({
     type: 'sub-agent',
     id: s.id,
     name: shortId(s.id),
-    meta: [s.status, s.task ? (s.task.length > 40 ? s.task.slice(0, 40) + '…' : s.task) : ''].filter(Boolean).join(' · '),
+    meta: [s.task ? (s.task.length > 40 ? s.task.slice(0, 40) + '…' : s.task) : '', orphan ? `parent ${shortId(parent)}` : ''].filter(Boolean).join(' · '),
     href: `/conversations/${encodeURIComponent(s.id)}`,
     badge: s.role || 'sub-agent',
+    state: s.status,
     depth: 1,
     parent,
     current: !currentIsProcess && s.id === current,
@@ -271,31 +317,77 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
         meta: [goal?.status, p.tool, p.trigger !== '—' ? p.trigger : ''].filter(Boolean).join(' · '),
         href: processPath(p.id),
         state: processState(p),
+        proc: p,
         current: currentIsProcess && p.id === current,
       };
     }),
     ...(data ?? []).flatMap((c) => {
+      const id = c.id ?? '';
       const row: Row = {
         type: 'conversation',
-        id: c.id ?? '',
-        name: c.name || shortId(c.id ?? ''),
-        meta: [c.role, c.status, ago(c.updated_at)].filter(Boolean).join(' · '),
-        href: `/conversations/${encodeURIComponent(c.id ?? '')}`,
+        id,
+        name: c.name || shortId(id),
+        meta: [c.role, ago(c.updated_at)].filter(Boolean).join(' · '),
+        href: `/conversations/${encodeURIComponent(id)}`,
+        status: c.status,
+        planMode: c.plan_mode,
+        protected: c.protected,
+        questions: qByAgent.get(id) || undefined,
+        caps: capByAgent.get(id) || undefined,
         current: !currentIsProcess && c.id === current,
       };
-      const children = [...(subs.get(c.id ?? '')?.values() ?? [])].map((s) => subRow(s, c.id ?? ''));
+      const children = [...(subs.get(id)?.values() ?? [])].map((s) => subRow(s, id));
       return [row, ...children];
     }),
     // Sub-agents whose parent is not in the roster (e.g. a reaped session).
     ...[...subs.entries()].flatMap(([parent, m]) =>
       (data ?? []).some((c) => c.id === parent) || (procs.data?.list ?? []).some((p) => p.id === parent)
         ? []
-        : [...m.values()].map((s) => subRow(s, parent)),
+        : [...m.values()].map((s) => subRow(s, parent, true)),
     ),
   ];
   const running = procs.data?.list.filter((p) => p.state !== 'stopped').length ?? 0;
-  const visible = rows.filter((r) => !r.parent || !collapsed.has(r.parent));
+  const f = filter.trim().toLowerCase();
+  const textOk = (r: Row) => !f || r.name.toLowerCase().includes(f) || r.meta.toLowerCase().includes(f) || r.id.toLowerCase().includes(f);
+  const chipOk = (r: Row) =>
+    chip === 'all' ||
+    (chip === 'conversation' && (r.type === 'conversation' || r.type === 'sub-agent')) ||
+    (chip === 'process' && r.type === 'process') ||
+    (chip === 'goal' && r.type === 'goal');
+  const visible = rows.filter((r) => (!r.parent || !collapsed.has(r.parent)) && chipOk(r) && textOk(r));
   const hasKids = (r: Row) => (subs.get(r.id)?.size ?? 0) > 0;
+
+  // Row actions: rename, copy link, delete a conversation; start/stop a process.
+  const removeConversation = async (r: Row) => {
+    if (!(await ask({ title: `Delete ${r.name}?`, message: 'The conversation and its history are removed.', confirm: 'Delete', danger: true }))) return;
+    const { error: e } = await api.DELETE('/conversations/{id}', { params: { path: { id: r.id } } });
+    if (e) {
+      setError(errorMessage(e, 'Could not delete the conversation.'));
+      return;
+    }
+    if (r.current) route('/conversations');
+    setCreated((n) => n + 1);
+  };
+  const signal = async (p: Process, kind: 'start' | 'stop') => {
+    const call =
+      kind === 'start'
+        ? api.POST('/processes/{id}/start', { params: { path: { id: p.id } } })
+        : api.POST('/processes/{id}/stop', { params: { path: { id: p.id } } });
+    const { error: e } = await call;
+    if (e) setError(errorMessage(e, `Could not ${kind} the process.`));
+  };
+  const submitRename = async () => {
+    if (!renaming) return;
+    const name = renameValue.trim();
+    if (!name) return;
+    const { error: e } = await api.PATCH('/conversations/{id}', { params: { path: { id: renaming } }, body: { name } });
+    if (e) {
+      setError(errorMessage(e, 'Could not rename the conversation.'));
+      return;
+    }
+    setRenaming(null);
+    setCreated((n) => n + 1);
+  };
 
   // The counts ride at the right of the shell's "Agents" label row.
   useEffect(() => {
@@ -304,7 +396,9 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
         {procs.data && (
           <>
             <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
-            <span>{rows.length} agents</span>
+            <span>
+              {(data ?? []).length} conversations · {procs.data.list.length} processes
+            </span>
           </>
         )}
       </span>
@@ -314,19 +408,39 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
     };
   });
 
+  const chips: [typeof chip, string][] = [
+    ['all', 'All'],
+    ['conversation', 'Conversations'],
+    ['process', 'Processes'],
+    ['goal', 'Goals'],
+  ];
+
   return (
     <nav class={split.list} aria-label="Agents">
       <ListHead>
+        <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
         <button type="button" class={`button ${styles.new}`} onClick={() => setPicking(true)} disabled={busy}>
           New agent
         </button>
       </ListHead>
+      <div class={styles.chips} role="group" aria-label="Filter by type">
+        {chips.map(([v, label]) => (
+          <button key={v} type="button" class={styles.chip} aria-pressed={chip === v} onClick={() => setChip(v)}>
+            {label}
+          </button>
+        ))}
+      </div>
       {error && <p class="error">{error}</p>}
       {loadError && <p class="error">{loadError}</p>}
       {procs.error && <p class="error">{procs.error}</p>}
       {!data && !procs.data && !loadError && !procs.error && <p class="muted">Loading…</p>}
-      {data && procs.data && rows.length === 0 && <p class="empty">No agents yet.</p>}
-      {rows.length > 0 && (
+      {data && procs.data && rows.length === 0 && (
+        <p class="empty">
+          No agents yet. Start one, or <a href="/builder/agents">author one in the Builder</a>.
+        </p>
+      )}
+      {rows.length > 0 && visible.length === 0 && <p class="empty">No agent matches.</p>}
+      {visible.length > 0 && (
         <ul>
           {visible.map((r) => (
             <li key={`${r.type}:${r.id}`}>
@@ -340,10 +454,79 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
                   <span class={styles.name}>{r.name}</span>
                   <span class={styles.meta}>
                     {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
-                    {r.state && <span class={`${detail.badge} ${detail[r.state]}`}>{r.state}</span>}
+                    {r.state && <span class={`${detail.badge} ${stateClass(r.state)}`}>{r.state}</span>}
+                    {r.type === 'conversation' && r.status && <span class={`${detail.badge} ${stateClass(r.status)}`}>{r.status}</span>}
+                    {r.planMode && (
+                      <span class={detail.badge} title="Plan mode">
+                        plan
+                      </span>
+                    )}
+                    {r.protected && (
+                      <span class={detail.badge} title="Protected from deletion">
+                        pinned
+                      </span>
+                    )}
+                    {!!r.questions && (
+                      <span class={`${detail.badge} ${detail.failing}`} title="Questions waiting for an answer">
+                        ?{r.questions}
+                      </span>
+                    )}
+                    {!!r.caps && (
+                      <span class={`${detail.badge} ${detail.failing}`} title="Capability requests waiting">
+                        cap {r.caps}
+                      </span>
+                    )}
                     {r.meta}
                   </span>
                 </a>
+                <span class={styles.rowActions}>
+                  {r.type === 'conversation' && (
+                    <>
+                      <button
+                        type="button"
+                        aria-label={`Rename ${r.name}`}
+                        title="Rename"
+                        onClick={() => {
+                          setRenameValue(r.name);
+                          setRenaming(r.id);
+                        }}
+                      >
+                        <Icon name="pencil" size={14} />
+                      </button>
+                      <button
+                        type="button"
+                        aria-label={`Copy link to ${r.name}`}
+                        title="Copy link"
+                        onClick={() => void copyText(`${window.location.origin}/conversations/${encodeURIComponent(r.id)}`)}
+                      >
+                        <Icon name="link" size={14} />
+                      </button>
+                      <button type="button" class={styles.danger} aria-label={`Delete ${r.name}`} title="Delete" onClick={() => void removeConversation(r)}>
+                        <Icon name="trash" size={14} />
+                      </button>
+                    </>
+                  )}
+                  {r.type === 'sub-agent' && (
+                    <button
+                      type="button"
+                      aria-label={`Copy link to ${r.name}`}
+                      title="Copy link"
+                      onClick={() => void copyText(`${window.location.origin}/conversations/${encodeURIComponent(r.id)}`)}
+                    >
+                      <Icon name="link" size={14} />
+                    </button>
+                  )}
+                  {r.proc && actionsFor(r.proc).stop && (
+                    <button type="button" aria-label={`Stop ${r.name}`} title="Stop" onClick={() => void signal(r.proc!, 'stop')}>
+                      <Icon name="stop" size={14} />
+                    </button>
+                  )}
+                  {r.proc && actionsFor(r.proc).start && (
+                    <button type="button" aria-label={`Start ${r.name}`} title="Start" onClick={() => void signal(r.proc!, 'start')}>
+                      <Icon name="play" size={14} />
+                    </button>
+                  )}
+                </span>
                 {hasKids(r) && (
                   <button
                     type="button"
@@ -406,6 +589,36 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
             </button>
           </div>
           {error && <p class="error">{error}</p>}
+        </div>
+      </dialog>
+      <dialog
+        ref={renameDialog}
+        class={styles.dialog}
+        aria-labelledby="rename-title"
+        onClose={() => setRenaming(null)}
+        onClick={(e) => {
+          if (e.target === renameDialog.current) setRenaming(null);
+        }}
+      >
+        <div class={styles.dialogBox}>
+          <h2 id="rename-title">Rename agent</h2>
+          <input
+            class="input"
+            aria-label="Name"
+            value={renameValue}
+            onInput={(e) => setRenameValue((e.target as HTMLInputElement).value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') void submitRename();
+            }}
+          />
+          <div class={styles.dialogActions}>
+            <button type="button" class={styles.cancel} onClick={() => setRenaming(null)}>
+              Cancel
+            </button>
+            <button type="button" class="button" onClick={() => void submitRename()}>
+              Save
+            </button>
+          </div>
         </div>
       </dialog>
     </nav>
