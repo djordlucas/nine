@@ -28,6 +28,7 @@ export type IconName =
   | 'plus'
   | 'prev'
   | 'next'
+  | 'menu'
   | 'pencil'
   | 'link'
   | 'send'

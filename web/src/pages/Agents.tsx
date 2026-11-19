@@ -102,15 +102,36 @@ function Activity({ id, isProcess, onRenamed }: { id: string; isProcess: boolean
 }
 
 /** The right side for a conversation agent: what identifies it. */
-function ConversationPanel({ info }: { info: { id?: string; name?: string; role?: string; status?: string; age_seconds?: number; events_count?: number } | null | undefined }) {
+function ConversationPanel({
+  info,
+}: {
+  info: { id?: string; name?: string; role?: string; status?: string; plan_mode?: string; age_seconds?: number; events_count?: number } | null | undefined;
+}) {
   if (!info) return <p class="muted">Loading…</p>;
   return (
     <div class={detail.detail}>
+      {info.plan_mode && info.plan_mode !== 'off' && (
+        <p class={styles.planBadge} data-mode={info.plan_mode}>
+          plan: {info.plan_mode}
+        </p>
+      )}
+      {info.id && <ContextMini id={info.id} />}
       <dl class={detail.facts}>
         <dt>type</dt>
         <dd>conversation</dd>
         <dt>id</dt>
-        <dd><code>{info.id}</code></dd>
+        <dd>
+          <code>{info.id}</code>
+          <button
+            type="button"
+            class={styles.copyId}
+            aria-label="Copy id"
+            title="Copy id"
+            onClick={() => info.id && void copyText(info.id)}
+          >
+            <Icon name="link" size={13} />
+          </button>
+        </dd>
         {info.name && (
           <>
             <dt>name</dt>
@@ -130,6 +151,35 @@ function ConversationPanel({ info }: { info: { id?: string; name?: string; role?
         <dt>events</dt>
         <dd>{info.events_count ?? 0}</dd>
       </dl>
+      <p class={styles.panelLinks}>
+        {info.id && <a href={`/journal?agent=${encodeURIComponent(info.id)}`}>View in Journal</a>}
+        {info.role && <a href={`/builder/roles/${encodeURIComponent(info.role)}`}>Open role</a>}
+      </p>
+    </div>
+  );
+}
+
+/** Context use for the session, as a slim bar; refreshed when a turn ends. */
+function ContextMini({ id }: { id: string }) {
+  const { data } = useLive(
+    async () => {
+      const r = await get(api.GET('/conversations/{id}/context', { params: { path: { id } } }), 'the context');
+      const ctx = (r as { context?: { used?: unknown; budget?: unknown } }).context ?? {};
+      const used = typeof ctx.used === 'number' ? ctx.used : 0;
+      const budget = typeof ctx.budget === 'number' ? ctx.budget : 0;
+      return budget > 0 ? { used, budget } : null;
+    },
+    ['turn_end'],
+    id,
+  );
+  if (!data) return null;
+  const pct = Math.min(100, Math.round((data.used / data.budget) * 100));
+  return (
+    <div class={styles.ctxMini} title={`${data.used} of ${data.budget} tokens in context`}>
+      <span class={styles.ctxMiniLabel}>context {pct}%</span>
+      <span class={styles.ctxBar}>
+        <span class={styles.ctxFill} style={{ width: `${pct}%` }} data-danger={pct >= 90 || undefined} />
+      </span>
     </div>
   );
 }

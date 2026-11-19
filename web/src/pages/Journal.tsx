@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { BUFFER, recentEvents, streamState, subscribe, type JournalEvent } from '../api/events';
 import { eventKind, omittedBytes, shortId, summarize, timeOf, type EventKind } from '../journal';
 import styles from './Journal.module.css';
@@ -31,7 +32,11 @@ export function Journal() {
   const pausedRef = useRef(false);
   const [missed, setMissed] = useState(false);
   const [kind, setKind] = useState<EventKind | ''>('');
-  const [agent, setAgent] = useState('');
+  const { query } = useLocation();
+  // ?agent=<id> (the side panel's "View in Journal" link) pre-fills the filter.
+  const queryAgent = typeof query.agent === 'string' ? query.agent : '';
+  const [agent, setAgent] = useState(queryAgent);
+  useEffect(() => setAgent(queryAgent), [queryAgent]);
   const [limit, setLimit] = useState(PAGE);
   const [open, setOpen] = useState<number | null>(null);
 

@@ -115,7 +115,7 @@ export function BoardPanel({ conversation }: { conversation: string }) {
 
   return (
     <section class={styles.panel} aria-label="Board">
-      <h3 class={styles.panelTitle}>Board</h3>
+      <h3 class={styles.panelTitle}>Board{data?.length ? ` · ${data.length}` : ''}</h3>
       {loadError && <p class="error">{loadError}</p>}
       {!data && !loadError && <p class="muted">Loading…</p>}
       {error && <p class="error" role="alert">{error}</p>}

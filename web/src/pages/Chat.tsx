@@ -18,21 +18,21 @@ import detail from '../components/Detail.module.css';
 /** The most history entries the API returns in one page. */
 const HISTORY_PAGE = 1000;
 
-/** The whole transcript, or its last HISTORY_PAGE entries. */
-async function loadHistory(id: string): Promise<Schemas['HistoryEntry'][]> {
+/** The transcript's newest HISTORY_PAGE entries, and how many there are in all. */
+async function loadHistory(id: string): Promise<{ items: Schemas['HistoryEntry'][]; total: number }> {
   const first = await get(
     api.GET('/conversations/{id}/history', { params: { path: { id }, query: { limit: HISTORY_PAGE } } }),
     'the transcript',
   );
   const total = first.pagination?.total ?? 0;
-  if (total <= HISTORY_PAGE) return first.data ?? [];
+  if (total <= HISTORY_PAGE) return { items: first.data ?? [], total };
   const last = await get(
     api.GET('/conversations/{id}/history', {
       params: { path: { id }, query: { limit: HISTORY_PAGE, offset: total - HISTORY_PAGE } },
     }),
     'the transcript',
   );
-  return last.data ?? [];
+  return { items: last.data ?? [], total };
 }
 
 /** Whether Enter should send: on a keyboard, yes; on a touch screen it is a newline. */
@@ -63,6 +63,12 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   const [loadError, setLoadError] = useState<string | null>(null);
   const [sock, setSock] = useState<SocketState>('connecting');
   const [panel, setPanel] = useState(false);
+  // History paging: the newest page is in the chat; older pages render above it.
+  const [historyTotal, setHistoryTotal] = useState(0);
+  const [loadedCount, setLoadedCount] = useState(0);
+  const [earlier, setEarlier] = useState<Schemas['HistoryEntry'][]>([]);
+  // Whether the view is pinned to the bottom; a button brings it back.
+  const [stuck, setStuck] = useState(true);
   // The model that answers and its provider, from the daemon's status; empty
   // until they are known.
   const [llm, setLlm] = useState({ model: '', provider: '' });
@@ -76,16 +82,23 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   const [contextNow, setContextNow] = useState<{ used: number; budget: number } | undefined>();
   const socket = useRef<ConversationSocket | null>(null);
   const bottom = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLOListElement>(null);
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  const closeMenu = () => {
+    if (menuRef.current) menuRef.current.open = false;
+  };
   const stick = useRef(true);
 
   // Reads of the transcript that came back without the latest turn, in a row.
   const behind = useRef(0);
   const load = useCallback(async () => {
     try {
-      const [history, questions] = await Promise.all([
+      const [{ items: history, total }, questions] = await Promise.all([
         loadHistory(id),
         get(api.GET('/questions'), 'questions'),
       ]);
+      setHistoryTotal(total);
+      setLoadedCount(history.length);
       // Merged against the chat as it is now, not in a state updater: Preact
       // runs those later, and whether to read again is decided here.
       const merged = reconcile(fromHistory(history), current.current.items);
@@ -130,9 +143,9 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
         // A deleted one has no history left either — its history read fails
         // with the same 404, which means missing, not an unhandled rejection.
         void loadHistory(id).then(
-          (h) => {
+          ({ items }) => {
             if (!alive) return;
-            if (h.length > 0) {
+            if (items.length > 0) {
               setReaped(true);
               void load();
             } else {
@@ -173,18 +186,49 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
     };
   }, [id, load]);
 
+  // The scroller is the message list on a desktop (the page scrolls on a
+  // phone, where the list has no overflow of its own).
+  const scrollToBottom = () => {
+    const ol = listRef.current;
+    if (ol && ol.scrollHeight > ol.clientHeight + 1) ol.scrollTop = ol.scrollHeight;
+    else bottom.current?.scrollIntoView({ block: 'end' });
+  };
+  const atBottom = () => {
+    const ol = listRef.current;
+    if (ol && ol.scrollHeight > ol.clientHeight + 1) return ol.scrollTop + ol.clientHeight >= ol.scrollHeight - 120;
+    const b = bottom.current?.getBoundingClientRect();
+    return !b || b.bottom <= window.innerHeight + 120;
+  };
+
   // Follow the conversation as it grows, unless the operator scrolled up.
   useLayoutEffect(() => {
-    if (stick.current) bottom.current?.scrollIntoView({ block: 'end' });
+    if (stick.current) scrollToBottom();
   }, [chat.items]);
   useEffect(() => {
     const onScroll = () => {
-      const b = bottom.current?.getBoundingClientRect();
-      if (b) stick.current = b.bottom <= window.innerHeight + 120;
+      stick.current = atBottom();
+      setStuck(stick.current);
     };
     window.addEventListener('scroll', onScroll, true);
     return () => window.removeEventListener('scroll', onScroll, true);
   }, []);
+
+  // One page of older history, prepended above the loaded transcript.
+  const loadEarlier = async () => {
+    const offset = Math.max(0, historyTotal - loadedCount - HISTORY_PAGE);
+    const page = await get(
+      api.GET('/conversations/{id}/history', { params: { path: { id }, query: { limit: HISTORY_PAGE, offset } } }),
+      'earlier messages',
+    );
+    const items = page.data ?? [];
+    setEarlier((e) => [...items, ...e]);
+    setLoadedCount((n) => n + items.length);
+  };
+  const toBottom = () => {
+    stick.current = true;
+    setStuck(true);
+    scrollToBottom();
+  };
 
   const send = (text: string, think: boolean): boolean => {
     if (!socket.current?.send({ type: 'user_turn', text, force_think: think || undefined })) return false;
@@ -244,6 +288,7 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
   const title = info?.name || shortId(id);
   return (
     <div class={styles.chat}>
+      <div class={styles.headWrap}>
       <header class={styles.head}>
         <div class={styles.title}>
           {ro ? (
@@ -290,13 +335,71 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
             </>
           )}
         </div>
+        {/* A phone has no room for the icon row, so the same actions live in a
+            menu; on a desktop the menu is display:none and only the row shows. */}
+        <details class={styles.moreMenu} ref={menuRef}>
+          <summary role="button" aria-label="More actions" title="More actions">
+            <Icon name="menu" size={18} />
+          </summary>
+          <div class={styles.moreList}>
+            <button
+              type="button"
+              aria-expanded={panel}
+              aria-label="Context"
+              onClick={() => {
+                setPanel(!panel);
+                closeMenu();
+              }}
+            >
+              <Icon name="context" size={16} /> Context
+            </button>
+            {!ro && (
+              <>
+                <button
+                  type="button"
+                  aria-label="End session"
+                  onClick={() => {
+                    endSession();
+                    closeMenu();
+                  }}
+                >
+                  <Icon name="power" size={16} /> End session
+                </button>
+                <button
+                  type="button"
+                  class={detail.danger}
+                  aria-label="Delete"
+                  onClick={() => {
+                    remove();
+                    closeMenu();
+                  }}
+                >
+                  <Icon name="trash" size={16} /> Delete
+                </button>
+              </>
+            )}
+          </div>
+        </details>
       </header>
 
       {panel && <ContextPanel id={id} />}
+      </div>
       {loadError && <p class="error">{loadError}</p>}
 
-      <ol class={styles.timeline} aria-label="Messages">
-        {chat.items.length === 0 && !loadError && <li class="muted">No messages yet. Say something.</li>}
+      <ol class={styles.timeline} aria-label="Messages" ref={listRef}>
+        {historyTotal > loadedCount && (
+          <li class={styles.earlier}>
+            <button type="button" onClick={loadEarlier}>
+              Load earlier messages
+            </button>
+          </li>
+        )}
+        {fromHistory(earlier).map((item, i) => (
+          <li key={`e${i}`} class={styles[item.kind]}>
+            <ItemView item={item} id={id} onAnswer={answer} onInspect={() => {}} opened={opened} onToggleTurn={toggleTurn} />
+          </li>
+        ))}
+        {chat.items.length === 0 && earlier.length === 0 && !loadError && <li class="muted">No messages yet. Say something.</li>}
         {chat.items.map((item, i) => (
           <li key={i} class={styles[item.kind]} data-inspected={i === inspected || undefined}>
             <ItemView
@@ -316,6 +419,17 @@ export function Chat({ id, onRenamed, readOnly }: { id: string; onRenamed?: () =
           </li>
         )}
       </ol>
+      {!stuck && (
+        <button
+          type="button"
+          class={styles.toBottom}
+          aria-label="Scroll to the latest message"
+          title="Scroll to the latest message"
+          onClick={toBottom}
+        >
+          <Icon name="next" size={18} />
+        </button>
+      )}
       <div ref={bottom} />
 
       <footer class={styles.footer}>

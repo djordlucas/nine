@@ -24,6 +24,11 @@ async function send(page: Page, text: string) {
 
 const messages = (page: Page) => page.getByRole('list', { name: 'Messages' });
 
+// On a phone the header's actions live behind the "More actions" menu.
+async function openHeaderActions(page: Page, isMobile: boolean) {
+  if (isMobile) await page.getByRole('button', { name: 'More actions' }).click();
+}
+
 test('a conversation streams its reply and renders Markdown', async ({ page }) => {
   await newConversation(page);
   await send(page, 'hello there');
@@ -81,17 +86,19 @@ test('a running turn can be stopped, and the session carries on', async ({ page 
   await expect(messages(page).locator('strong', { hasText: 'still there?' })).toBeVisible();
 });
 
-test('the context panel shows what the next call would see', async ({ page }) => {
+test('the context panel shows what the next call would see', async ({ page, isMobile }) => {
   await newConversation(page);
+  await openHeaderActions(page, isMobile);
   await page.getByRole('button', { name: 'Context' }).click();
   await expect(page.getByRole('region', { name: 'Context' })).toContainText('tokens');
 });
 
-test('a conversation can be deleted', async ({ page }) => {
+test('a conversation can be deleted', async ({ page, isMobile }) => {
   await newConversation(page);
   await send(page, 'delete me soon');
   await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
   const url = page.url();
+  await openHeaderActions(page, isMobile);
   await page.getByRole('button', { name: 'Delete', exact: true }).click();
   await page.getByRole('dialog', { name: 'Delete this conversation?' }).getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/conversations$/);
@@ -143,4 +150,70 @@ test('on a phone the chat sits above the details toggle; on a desktop the panel 
     await expect(toggle).toBeHidden();
     await expect(side).toBeVisible();
   }
+});
+
+test('the header shows one set of actions per layout: an icon row on a desktop, a menu on a phone', async ({ page, isMobile }) => {
+  await newConversation(page);
+  const more = page.getByRole('button', { name: 'More actions' });
+  if (isMobile) {
+    await expect(more).toBeVisible();
+    // Until the menu opens, the actions are not in the tree.
+    await expect(page.getByRole('button', { name: 'Context' })).toHaveCount(0);
+    await more.click();
+    await expect(page.getByRole('button', { name: 'Context' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'End session' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+  } else {
+    await expect(more).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Context' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'End session' })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Delete', exact: true })).toBeVisible();
+  }
+});
+
+test('scrolling up reveals a button that jumps back to the latest message', async ({ page, isMobile }) => {
+  await newConversation(page);
+  for (let i = 1; i <= 12; i++) {
+    await send(page, `fill the page ${i}`);
+    await expect(messages(page).locator('strong', { hasText: `fill the page ${i}` })).toBeVisible();
+  }
+  // The last turn is over: nothing streams in to pull the view back down.
+  await expect(page.getByRole('button', { name: 'Stop', exact: true })).toHaveCount(0);
+  const jump = page.getByRole('button', { name: 'Scroll to the latest message' });
+  await expect(jump).toHaveCount(0);
+  // Scroll the topmost container that actually scrolls (the message list on a
+  // desktop, some outer pane on a phone) back to the top.
+  await messages(page).evaluate((el) => {
+    let p: HTMLElement | null = el as HTMLElement;
+    while (p && p.scrollHeight <= p.clientHeight + 1) p = p.parentElement;
+    if (p) p.scrollTop = 0;
+    window.scrollTo(0, 0);
+  });
+  await expect(jump).toBeVisible();
+  await jump.click();
+  await expect(jump).toHaveCount(0);
+});
+
+test('the details panel shows context use and links out to the journal and the role', async ({ page, isMobile }) => {
+  // The e2e origin is plain HTTP, so copyText takes the execCommand path;
+  // capture what it selected.
+  await page.addInitScript(() => {
+    const orig = Document.prototype.execCommand;
+    (window as unknown as { __copied: string }).__copied = '';
+    Document.prototype.execCommand = function (cmd: string, ...args: unknown[]) {
+      if (cmd === 'copy') (window as unknown as { __copied: string }).__copied = window.getSelection()?.toString() ?? '';
+      return orig.call(this, cmd, ...(args as []));
+    };
+  });
+  await newConversation(page);
+  await send(page, 'hello there');
+  await expect(page.getByRole('button', { name: 'Inspect turn 1' })).toBeVisible();
+  const side = page.getByRole('complementary', { name: 'Agent details' });
+  if (isMobile) await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await expect(side.getByText(/^context \d+%$/)).toBeVisible();
+  const id = page.url().split('/').pop()!;
+  const journal = side.getByRole('link', { name: 'View in Journal' });
+  await expect(journal).toHaveAttribute('href', `/journal?agent=${id}`);
+  await side.getByRole('button', { name: 'Copy id' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __copied: string }).__copied)).toBe(id);
 });
