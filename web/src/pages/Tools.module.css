@@ -22,9 +22,9 @@
 
 /* The selected tab: dark with light text, the reverse in dark mode. */
 .view[aria-current='page'] {
-  background: var(--ink);
-  color: var(--ink-text);
-  border-bottom-color: var(--ink);
+  background: var(--surface-2);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
   border-radius: var(--radius) var(--radius) 0 0;
 }
 
