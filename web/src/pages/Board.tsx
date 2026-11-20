@@ -42,6 +42,9 @@ export function BoardPanel({ conversation }: { conversation: string }) {
   const [role, setRole] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  // The posting form stays folded until asked for: on the chat page it would
+  // compete with the message box for the operator's attention.
+  const [posting, setPosting] = useState(false);
   // The one task being edited, if any.
   const [editing, setEditing] = useState<string | null>(null);
   const [eTitle, setETitle] = useState('');
@@ -112,31 +115,42 @@ export function BoardPanel({ conversation }: { conversation: string }) {
 
   return (
     <section class={styles.panel} aria-label="Board">
-      <h3 class={styles.panelTitle}>Board</h3>
+      <h3 class={styles.panelTitle}>Board{data?.length ? ` · ${data.length}` : ''}</h3>
       {loadError && <p class="error">{loadError}</p>}
       {!data && !loadError && <p class="muted">Loading…</p>}
       {error && <p class="error" role="alert">{error}</p>}
       {data && data.length === 0 && <p class="empty">No tasks on this agent’s board.</p>}
-      <form class={styles.form} aria-label="Post a task to this board" onSubmit={(e) => void post(e)}>
-        <div class={styles.field}>
-          <label for={`board-title-${conversation}`}>New task</label>
-          <input id={`board-title-${conversation}`} class="input" value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="Title" required />
-        </div>
-        <div class={styles.field}>
-          <label for={`board-spec-${conversation}`}>Spec — what the worker should do</label>
-          <Area id={`board-spec-${conversation}`} class="input" rows={2} max={120} value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} />
-        </div>
-        <div class={styles.field}>
-          <label for={`board-role-${conversation}`}>Worker role</label>
-          <select id={`board-role-${conversation}`} class="input" value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
-            <option value="">worker's own role</option>
-            {(leafRoles ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
-          </select>
-        </div>
-        <div class={detail.actions}>
-          <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !title.trim()}>Post</button>
-        </div>
-      </form>
+      {!posting ? (
+        <button type="button" class={`button ${styles.newTask}`} onClick={() => setPosting(true)}>
+          New task
+        </button>
+      ) : (
+        <form class={styles.form} aria-label="Post a task to this board" onSubmit={(e) => void post(e)}>
+          <div class={styles.field}>
+            <label for={`board-title-${conversation}`}>Title</label>
+            <input id={`board-title-${conversation}`} class="input" value={title} onInput={(e) => setTitle((e.target as HTMLInputElement).value)} placeholder="Title" required />
+          </div>
+          <div class={styles.field}>
+            <label for={`board-spec-${conversation}`}>Spec — what the worker should do</label>
+            <Area id={`board-spec-${conversation}`} class="input" rows={2} max={120} value={spec} onInput={(e) => setSpec((e.target as HTMLTextAreaElement).value)} />
+          </div>
+          <div class={styles.field}>
+            <label for={`board-role-${conversation}`}>Worker role</label>
+            <select id={`board-role-${conversation}`} class="input" value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
+              <option value="">worker's own role</option>
+              {(leafRoles ?? []).map((r) => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div class={detail.actions}>
+            <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !title.trim()}>
+              Post
+            </button>
+            <button type="button" class={detail.action} onClick={() => setPosting(false)}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
 
       {data && data.length > 0 && (
         <ul class={styles.list}>

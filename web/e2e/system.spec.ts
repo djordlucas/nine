@@ -12,6 +12,14 @@ test('the overview shows the daemon, a backup download and the CLI-only operatio
   }
   await expect(page.getByText('nine restore <snapshot>')).toBeVisible();
 
+  // The daemon card carries what /status reports: model and provider, and
+  // links to the sessions, tools and store.
+  const daemon = page.getByRole('region', { name: 'Daemon' });
+  await expect(daemon.getByText('Model')).toBeVisible();
+  await expect(daemon).toContainText('stub');
+  await expect(daemon.getByText('Tools')).toBeVisible();
+  await expect(daemon.getByRole('link', { name: /\d+/ }).first()).toBeVisible();
+
   const download = page.waitForEvent('download');
   await page.getByRole('link', { name: 'Download the store (.tar.gz)' }).click();
   const file = await download;
@@ -27,6 +35,16 @@ test('the overview shows the daemon, a backup download and the CLI-only operatio
 });
 
 test('a session is listed, opened and deleted', async ({ page, request }) => {
+  // The e2e origin is plain HTTP, so copyText takes the execCommand path;
+  // capture what it selected.
+  await page.addInitScript(() => {
+    const orig = Document.prototype.execCommand;
+    (window as unknown as { __copied: string }).__copied = '';
+    Document.prototype.execCommand = function (cmd: string, ...args: unknown[]) {
+      if (cmd === 'copy') (window as unknown as { __copied: string }).__copied = window.getSelection()?.toString() ?? '';
+      return orig.call(this, cmd, ...(args as []));
+    };
+  });
   const res = await request.post('/api/v1/conversations', { headers: bearer, data: {} });
   expect(res.ok()).toBe(true);
   const id = (await res.json()).id as string;
@@ -36,28 +54,44 @@ test('a session is listed, opened and deleted', async ({ page, request }) => {
 
   await signIn(page);
   await page.goto('/system/sessions');
+  const list = page.getByRole('navigation', { name: 'Sessions' });
+  await expect(list).toContainText(/\d+ sessions?/);
   await page.getByRole('searchbox', { name: 'Filter sessions' }).fill(id);
-  const row = page.getByRole('navigation', { name: 'Sessions' }).locator(`a[href="/system/sessions/${id}"]`);
+  const row = list.locator(`a[href="/system/sessions/${id}"]`);
   await row.click();
   const session = page.getByRole('region', { name: 'Session' });
   await expect(session.getByText(id, { exact: true })).toBeVisible();
+
+  // The id copies, and the conversation opens from a primary button.
+  await session.getByRole('button', { name: 'Copy id' }).click();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __copied: string }).__copied)).toBe(id);
+  await expect(session.getByRole('link', { name: 'Open the conversation' })).toBeVisible();
 
   await session.getByRole('button', { name: 'Delete' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Delete' }).click();
   await expect(page).toHaveURL(/\/system\/sessions$/);
   await expect(row).toHaveCount(0);
+  // Back on the bare list, a desktop lands on the explanation card.
+  if (test.info().project.name === 'desktop') {
+    await expect(page.getByRole('heading', { name: 'Sessions', level: 2 })).toBeVisible();
+  }
 });
 
 test('reflections say when there are none', async ({ page }) => {
   await signIn(page);
   await page.goto('/system/reflections');
-  await page.getByRole('textbox', { name: 'Reflecting session' }).fill('no-such-session');
+  // An input with a list is a combobox in the a11y tree.
+  const field = page.getByRole('combobox', { name: 'Reflecting session' });
+  await expect(field).toHaveAttribute('list', 'reflection-sessions');
+  await field.fill('no-such-session');
   await page.getByRole('button', { name: 'Show' }).click();
   await expect(page.getByText('No reflections for no-such-session yet.')).toBeVisible();
 });
 
 test('a docs topic opens, and a link in it opens another in place', async ({ page }) => {
   await signIn(page);
+  await page.goto('/system/docs');
+  await expect(page.getByRole('navigation', { name: 'Docs topics' })).toContainText(/\d+ topics?/);
   await page.goto('/system/docs/processes');
   const topic = page.getByRole('region', { name: 'Topic' });
   await expect(topic.getByRole('heading').first()).toBeVisible();
@@ -73,4 +107,23 @@ test('the spec lists its topics', async ({ page }) => {
   await signIn(page);
   await page.goto('/system/spec');
   await expect(page.getByRole('navigation', { name: 'Spec topics' }).getByRole('link', { name: 'conformance' })).toBeVisible();
+});
+
+test('the config view shows the TOML and copies it', async ({ page }) => {
+  // Plain-HTTP e2e origin: capture the execCommand('copy') fallback.
+  await page.addInitScript(() => {
+    const orig = Document.prototype.execCommand;
+    (window as unknown as { __copied: string }).__copied = '';
+    Document.prototype.execCommand = function (cmd: string, ...args: unknown[]) {
+      if (cmd === 'copy') (window as unknown as { __copied: string }).__copied = window.getSelection()?.toString() ?? '';
+      return orig.call(this, cmd, ...(args as []));
+    };
+  });
+  await signIn(page);
+  await page.goto('/system/config');
+  await expect(page.getByRole('heading', { name: 'Configuration', level: 2 })).toBeVisible();
+  await page.getByRole('button', { name: 'Copy the TOML' }).click();
+  const copied = await page.evaluate(() => (window as unknown as { __copied: string }).__copied);
+  expect(copied.length).toBeGreaterThan(20);
+  expect(copied).toContain('=');
 });

@@ -18,3 +18,36 @@
   font-family: var(--mono);
   resize: none;
 }
+
+/* The skills picker on the agent form: a scrollable box of toggle chips. */
+.fieldLabel {
+  font-size: var(--text-sm);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  max-height: 132px;
+  overflow-y: auto;
+  padding: var(--space-1);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.chip {
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: none;
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  padding: 2px var(--space-2);
+  cursor: pointer;
+}
+
+.chip[aria-pressed='true'] {
+  background: var(--ink);
+  border-color: var(--ink);
+  color: var(--ink-text);
+}

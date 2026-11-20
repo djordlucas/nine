@@ -1,6 +1,7 @@
 /* The activity, as a full-width column (five's chat page): the page scrolls,
    the header bar and the composer stay pinned. */
 .chat {
+  position: relative;
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
@@ -767,5 +768,164 @@
     bottom: auto;
     flex: none;
     padding: var(--space-3) var(--space-4);
+  }
+}
+
+/* The header and the context panel share a wrapper: on a phone it is display:
+   contents (the header stays a direct flex child and keeps sticking), on a
+   desktop it anchors the panel as an overlay right under the header. */
+.headWrap {
+  display: contents;
+}
+
+/* The phone's "More actions" menu; hidden on a desktop, where the header's
+   icon row shows instead. */
+.moreMenu {
+  display: none;
+}
+
+/* The row that pages in older history, at the top of the timeline. */
+.earlier {
+  display: flex;
+  justify-content: center;
+}
+
+.earlier button {
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: var(--text-sm);
+  padding: var(--space-1) var(--space-3);
+  cursor: pointer;
+}
+
+.earlier button:hover {
+  color: var(--text);
+  border-color: var(--ink);
+}
+
+/* Floating button that appears when the view is scrolled up, to jump back to
+   the latest message. Fixed on a phone (the page scrolls); absolute inside
+   the chat box on a desktop. */
+.toBottom {
+  position: fixed;
+  right: var(--space-4);
+  bottom: calc(var(--tabbar) + 96px);
+  z-index: 3;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--edge);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+}
+
+.toBottom svg {
+  transform: rotate(90deg);
+}
+
+/* On a desktop with a mouse, a message's side buttons fade in on hover —
+   opacity keeps them in the a11y tree (and reachable by keyboard) at rest. */
+@media (hover: hover) and (min-width: 768px) {
+  .side {
+    opacity: 0;
+    transition: opacity 0.12s ease;
+  }
+
+  .timeline > li:hover .side,
+  .timeline > li:focus-within .side {
+    opacity: 1;
+  }
+}
+
+@media (max-width: 767px) {
+  /* The header's icon row gives way to the menu on a phone. */
+  .head .actions {
+    display: none;
+  }
+
+  .moreMenu {
+    display: block;
+    position: relative;
+  }
+
+  .moreMenu summary {
+    list-style: none;
+    display: grid;
+    place-items: center;
+    width: var(--touch);
+    height: var(--touch);
+    cursor: pointer;
+    border-radius: var(--radius);
+  }
+
+  .moreMenu summary::-webkit-details-marker {
+    display: none;
+  }
+
+  .moreList {
+    position: absolute;
+    right: 0;
+    top: calc(100% - 6px);
+    z-index: 5;
+    display: grid;
+    gap: 2px;
+    min-width: 190px;
+    padding: var(--space-2);
+    background: var(--surface);
+    border: 1px solid var(--edge);
+    border-radius: var(--radius-lg);
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+  }
+
+  .moreList button {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    min-height: var(--touch);
+    padding: 0 var(--space-2);
+    border: 0;
+    border-radius: var(--radius);
+    background: none;
+    font: inherit;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .moreList button:hover {
+    background: var(--surface-2);
+  }
+}
+
+@media (min-width: 768px) {
+  .headWrap {
+    display: block;
+    position: relative;
+    flex: none;
+  }
+
+  /* The context panel floats under the header instead of pushing the
+     messages down. */
+  .context {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    z-index: 2;
+    width: min(480px, calc(100% - 2 * var(--space-4)));
+    max-height: 70dvh;
+    overflow-y: auto;
+    margin: var(--space-2) var(--space-4) 0 0;
+    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+  }
+
+  .toBottom {
+    position: absolute;
+    bottom: 110px;
   }
 }

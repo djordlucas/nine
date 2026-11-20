@@ -17,8 +17,13 @@ test('the session survives a reload and a deep link', async ({ page }) => {
 
 test('the layout fits the viewport', async ({ page }) => {
   await signIn(page);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
-  expect(overflow).toBeLessThanOrEqual(0);
+  // The Builder's view tabs are the widest strip; a conversation page has the
+  // roster, chat and side panel.
+  for (const path of ['/', '/builder', '/builder/tools', '/conversations']) {
+    await page.goto(path);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
+    expect(overflow).toBeLessThanOrEqual(0);
+  }
 });
 
 test('every section is reachable', async ({ page }) => {
@@ -26,8 +31,9 @@ test('every section is reachable', async ({ page }) => {
   const sections = ['Agents', 'Builder', 'Inbox', 'Data', 'Journal', 'System'];
   for (const name of sections) {
     // The rail (desktop) and the tab bar (phone) share the name; the hidden one
-    // is not in the accessibility tree, so this finds whichever is shown.
-    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name, exact: true }).click();
+    // is not in the accessibility tree, so this finds whichever is shown. Not
+    // exact: a waiting Inbox carries a count badge in its link's name.
+    await page.getByRole('navigation', { name: 'Sections' }).getByRole('link', { name }).click();
     await expect(page.getByRole('heading', { name, level: 1 })).toBeVisible();
   }
 });
@@ -38,6 +44,15 @@ test('the rail shows on desktop and the tab bar on a phone', async ({ page, isMo
   // The rail carries the brand link; the phone tab bar does not.
   await expect(navs.filter({ has: page.getByRole('link', { name: 'Nine' }) })).toBeVisible({ visible: !isMobile });
   await expect(navs.filter({ hasNot: page.getByRole('link', { name: 'Nine' }) })).toBeVisible({ visible: isMobile });
+});
+
+test('the theme control is an icon button that keeps its name and cycles', async ({ page }) => {
+  await signIn(page);
+  const themeBtn = page.getByRole('button', { name: /^Theme: / });
+  await expect(themeBtn).toBeVisible();
+  const before = await themeBtn.getAttribute('aria-label');
+  await themeBtn.click();
+  await expect(themeBtn).not.toHaveAttribute('aria-label', before ?? '');
 });
 
 test('signing out returns to the sign-in page and ends the session', async ({ page }) => {

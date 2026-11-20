@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
+import { useLocation } from 'preact-iso';
 import { BUFFER, recentEvents, streamState, subscribe, type JournalEvent } from '../api/events';
 import { eventKind, omittedBytes, shortId, summarize, timeOf, type EventKind } from '../journal';
 import styles from './Journal.module.css';
@@ -31,7 +32,11 @@ export function Journal() {
   const pausedRef = useRef(false);
   const [missed, setMissed] = useState(false);
   const [kind, setKind] = useState<EventKind | ''>('');
-  const [agent, setAgent] = useState('');
+  const { query } = useLocation();
+  // ?agent=<id> (the side panel's "View in Journal" link) pre-fills the filter.
+  const queryAgent = typeof query.agent === 'string' ? query.agent : '';
+  const [agent, setAgent] = useState(queryAgent);
+  useEffect(() => setAgent(queryAgent), [queryAgent]);
   const [limit, setLimit] = useState(PAGE);
   const [open, setOpen] = useState<number | null>(null);
 
@@ -136,12 +141,16 @@ function Row({ e, open, toggle, onAgent }: { e: JournalEvent; open: boolean; tog
   const omitted = omittedBytes(e);
   return (
     <li class={styles.row}>
-      <button type="button" class={styles.rowHead} aria-expanded={open} onClick={toggle}>
-        <span class={styles.time}>{timeOf(e)}</span>
-        <span class={`${styles.type} ${styles[eventKind(e.type)]}`}>{e.type}</span>
-        <span class={styles.who}>{shortId(e.agent_id)}</span>
-        <span class={styles.summary}>{summarize(e)}</span>
-      </button>
+      <div class={styles.rowHead}>
+        <button type="button" class={styles.rowToggle} aria-expanded={open} onClick={toggle}>
+          <span class={styles.time}>{timeOf(e)}</span>
+          <span class={`${styles.type} ${styles[eventKind(e.type)]}`}>{e.type}</span>
+          <span class={styles.summary}>{summarize(e)}</span>
+        </button>
+        <button type="button" class={`${styles.who} ${styles.link}`} onClick={() => onAgent(e.agent_id)} title={`Show only ${e.agent_id}`}>
+          {shortId(e.agent_id)}
+        </button>
+      </div>
       {open && (
         <div class={styles.detail}>
           <dl class={styles.facts}>
@@ -151,7 +160,14 @@ function Row({ e, open, toggle, onAgent }: { e: JournalEvent; open: boolean; tog
             <dd>
               <button type="button" class={styles.link} onClick={() => onAgent(e.agent_id)} title="Show only this one">
                 {e.agent_id}
-              </button>
+              </button>{' '}
+              ·{' '}
+              <a
+                class={styles.link}
+                href={e.agent_id.includes(':') ? `/processes/${encodeURIComponent(e.agent_id)}` : `/conversations/${encodeURIComponent(e.agent_id)}`}
+              >
+                Open
+              </a>
             </dd>
             {e.turn > 0 && (
               <>

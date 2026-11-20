@@ -17,6 +17,18 @@ test('the tool roster groups tools, filters them, and calls one', async ({ page 
   await expect(page.getByRole('status').filter({ hasText: /Returned|Failed/ })).toBeVisible();
 });
 
+test('the shell plugin’s tool cannot be called from the UI', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/builder/tools/shell');
+  await expect(page.getByRole('heading', { name: 'shell', level: 2 })).toBeVisible();
+  await expect(page.getByText(/cannot be called from the UI/)).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Call', exact: true })).toHaveCount(0);
+  await expect(page.getByRole('textbox', { name: 'Arguments as JSON' })).toHaveCount(0);
+  // Another tool still offers the call form.
+  await page.goto('/builder/tools/time');
+  await expect(page.getByRole('button', { name: 'Call', exact: true })).toBeVisible();
+});
+
 test('a call with arguments that are not JSON is refused before it is sent', async ({ page }) => {
   await signIn(page);
   await page.goto('/builder/tools/read_file');
@@ -56,6 +68,14 @@ test('the inbox shows what waits, the notifications and the capabilities in forc
     await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible();
   }
   await expect(page.getByText('No request is waiting.')).toBeVisible();
+  // The notifications card filters by text and by unseen.
+  await expect(page.getByRole('searchbox', { name: 'Filter notifications' })).toBeVisible();
+  const unseen = page.getByRole('button', { name: 'Unseen only' });
+  await expect(unseen).toHaveAttribute('aria-pressed', 'false');
+  await unseen.click();
+  await expect(unseen).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('searchbox', { name: 'Filter notifications' }).fill('zzz-no-such-notification');
+  await unseen.click();
 });
 
 test('a list folds away and stays folded on a desktop; a phone has nothing to fold', async ({ page, isMobile }) => {

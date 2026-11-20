@@ -1,7 +1,8 @@
-import type { ComponentChildren } from 'preact';
 import { useEffect, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get, type Schemas } from '../api/client';
+import { ago } from '../format';
+import { copyText } from '../clipboard';
 import { useLive } from '../live';
 import { bytes } from '../system';
 import { ask } from '../components/Confirm';
@@ -9,6 +10,7 @@ import { Area } from '../components/Area';
 import { Toggle } from '../components/Toggle';
 import { Icon } from '../components/Icon';
 import { ListHead, Split } from '../components/Split';
+import { Blank } from '../components/Blank';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
@@ -77,20 +79,7 @@ function dataHref(key: string): string {
   return `/builder/data?key=${encodeURIComponent(key)}`;
 }
 
-/** What a Builder view's pane shows when nothing is selected: a word on what
- * the section is for, so the page is never a bare pane. */
-function Blank({ title, children }: { title: string; children: ComponentChildren }) {
-  return (
-    <article class={`card ${detail.detail}`}>
-      <header class={detail.head}>
-        <div class={detail.title}>
-          <h2>{title}</h2>
-        </div>
-      </header>
-      <p class="muted">{children}</p>
-    </article>
-  );
-}
+
 
 /** Reads a File as a base64 string, in chunks (String.fromCharCode overflows on large buffers). */
 async function fileBase64(f: File): Promise<string> {
@@ -123,6 +112,7 @@ function AgentsView({ id }: { id?: string }) {
   const [reloads, setReloads] = useState(0);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<string | null>(null);
+  const [filter, setFilter] = useState('');
   const fileInput = useRef<HTMLInputElement>(null);
   const { data, error } = useLive(
     async () => {
@@ -190,10 +180,13 @@ function AgentsView({ id }: { id?: string }) {
     setReloads((n) => n + 1);
   };
 
+  const f = filter.trim().toLowerCase();
+  const shown = (data?.agents ?? []).filter((a) => !f || `${a.definition.name} ${a.definition.role ?? ''}`.toLowerCase().includes(f));
   return (
     <Split name="builder-agents" noun="agents" open={!!id}>
       <nav class={split.list} aria-label="Agents">
         <ListHead>
+          <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
           <a class="button" href={agentHref('new')}>
             New agent
           </a>
@@ -210,6 +203,11 @@ function AgentsView({ id }: { id?: string }) {
           <button type="button" class={`${detail.action} ${detail.secondary}`} disabled={busy} onClick={() => fileInput.current?.click()} title="Import an exported agent bundle (lands staged until approved)">
             <Icon name="upload" size={16} /> Import
           </button>
+          {data && (
+            <span class="muted">
+              {data.agents.length} agent{data.agents.length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {outcome && (
           <p class="muted" role="status">
@@ -218,16 +216,16 @@ function AgentsView({ id }: { id?: string }) {
         )}
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && data.agents.length === 0 && <p class="empty">No agents yet. Create one, or import a bundle.</p>}
-        {data && data.agents.length > 0 && (
+        {data && shown.length === 0 && <p class="empty">{data.agents.length === 0 ? 'No agents yet. Create one, or import a bundle.' : 'No agent matches.'}</p>}
+        {shown.length > 0 && (
           <ul>
-            {data.agents.map((a) => (
+            {shown.map((a) => (
               <li key={a.id}>
                 <a href={agentHref(a.id)} class={split.row} aria-current={a.id === id ? 'page' : undefined}>
                   <span className={`${detail.badge} ${a.status === 'staged' ? detail.failing : ''}`}>{a.status}</span>
                   <span class={split.name}>{a.definition.name}</span>
                   <span class={split.meta}>
-                    {[a.definition.role, `${(a.definition.skills ?? []).length} skills`, `v${a.version}`].filter(Boolean).join(' · ')}
+                    {[a.definition.role, `${(a.definition.skills ?? []).length} skills`, `v${a.version}`, ago(a.updated_at)].filter(Boolean).join(' · ')}
                   </span>
                 </a>
               </li>
@@ -284,6 +282,8 @@ function AgentForm({
   const [reflection, setReflection] = useState('');
   const [busySave, setBusySave] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The loaded values, to tell "unsaved changes" from a saved form.
+  const savedRef = useRef<{ name: string; role: string; skillsText: string; selfModel: string; reflection: string } | null>(null);
 
   useEffect(() => {
     if (isNew) return;
@@ -295,17 +295,50 @@ function AgentForm({
         setLoadError(errorMessage(e, 'Could not load the agent.'));
         return;
       }
+      const loaded = {
+        name: a.definition.name,
+        role: a.definition.role ?? '',
+        skillsText: (a.definition.skills ?? []).join(', '),
+        selfModel: a.definition.self_model ? JSON.stringify(a.definition.self_model, null, 2) : '',
+        reflection: a.definition.reflection ? JSON.stringify(a.definition.reflection, null, 2) : '',
+      };
+      const prev = savedRef.current;
       setAgent(a);
-      setName(a.definition.name);
-      setRole(a.definition.role ?? '');
-      setSkillsText((a.definition.skills ?? []).join(', '));
-      setSelfModel(a.definition.self_model ? JSON.stringify(a.definition.self_model, null, 2) : '');
-      setReflection(a.definition.reflection ? JSON.stringify(a.definition.reflection, null, 2) : '');
+      // A reload (after a save) must not clobber fields the operator is
+      // editing: each field takes the server's value only if it still holds
+      // the previously loaded one (the updater reads the latest state, so a
+      // concurrent edit wins over the incoming load).
+      setName((cur) => (prev && cur !== prev.name ? cur : loaded.name));
+      setRole((cur) => (prev && cur !== prev.role ? cur : loaded.role));
+      setSkillsText((cur) => (prev && cur !== prev.skillsText ? cur : loaded.skillsText));
+      setSelfModel((cur) => (prev && cur !== prev.selfModel ? cur : loaded.selfModel));
+      setReflection((cur) => (prev && cur !== prev.reflection ? cur : loaded.reflection));
+      savedRef.current = loaded;
     })();
     return () => {
       alive = false;
     };
   }, [id, isNew, reload]);
+
+  const dirty =
+    !isNew &&
+    savedRef.current !== null &&
+    (name !== savedRef.current.name ||
+      role !== savedRef.current.role ||
+      skillsText !== savedRef.current.skillsText ||
+      selfModel !== savedRef.current.selfModel ||
+      reflection !== savedRef.current.reflection);
+  const selectedSkills = skillsText
+    .split(',')
+    .map((x) => x.trim())
+    .filter(Boolean);
+  // Chips cover the registered skills plus any the definition already names
+  // (a skill since deleted from the store still shows, so it can be removed).
+  const skillNames = [...new Set([...skills.map((x) => x.name), ...selectedSkills])].sort((a, b) => a.localeCompare(b));
+  const toggleSkill = (n: string) => {
+    const next = selectedSkills.includes(n) ? selectedSkills.filter((x) => x !== n) : [...selectedSkills, n];
+    setSkillsText(next.join(', '));
+  };
 
   const parseJson = (text: string): Record<string, unknown> | undefined => {
     const t = text.trim();
@@ -335,6 +368,7 @@ function AgentForm({
         const { data: a, error: e } = await api.PATCH('/agents/{id}', { params: { path: { id } }, body: def });
         if (!a) throw new Error(errorMessage(e, 'Could not update the agent.'));
       }
+      savedRef.current = { name: name.trim(), role, skillsText, selfModel, reflection };
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -354,9 +388,19 @@ function AgentForm({
               {agent.id} · v{agent.version} · {agent.status}
             </span>
           )}
+          {dirty && <span class="muted">Unsaved changes</span>}
         </div>
         {!isNew && agent && (
           <div class={detail.actions}>
+            <button
+              type="button"
+              class={`${detail.action} ${detail.iconAction}`}
+              aria-label="Copy link"
+              title="Copy a link to this agent"
+              onClick={() => void copyText(`${window.location.origin}${agentHref(agent.id)}`)}
+            >
+              <Icon name="link" size={16} />
+            </button>
             {agent.status === 'staged' && (
               <button type="button" class={`${detail.action} ${detail.primary}`} disabled={busy} onClick={() => onApprove(agent.id)}>
                 Approve
@@ -403,14 +447,20 @@ function AgentForm({
           </select>
         </div>
         <div class={styles.field}>
-          <label for="agent-skills">Skills (comma-separated)</label>
-          <input
-            id="agent-skills"
-            class="input"
-            value={skillsText}
-            onInput={(e) => setSkillsText((e.target as HTMLInputElement).value)}
-            placeholder={skills.map((s) => s.name).join(', ')}
-          />
+          <span class={styles.fieldLabel} id="agent-skills-label">
+            Skills
+          </span>
+          {skillNames.length > 0 ? (
+            <div class={styles.chips} role="group" aria-labelledby="agent-skills-label">
+              {skillNames.map((n) => (
+                <button type="button" key={n} class={styles.chip} aria-pressed={selectedSkills.includes(n)} onClick={() => toggleSkill(n)}>
+                  {n}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <p class="muted">No skills yet — create some in the Skills view, then attach them here.</p>
+          )}
         </div>
         <div class={styles.field}>
           <label for="agent-self-model">Self-model (JSON, optional)</label>
@@ -422,7 +472,7 @@ function AgentForm({
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busySave || !name.trim()}>
-            {isNew ? 'Create' : 'Save'}
+            {busySave ? 'Saving…' : isNew ? 'Create' : 'Save'}
           </button>
         </div>
       </form>
@@ -435,10 +485,18 @@ function AgentForm({
 function RolesView({ name }: { name?: string }) {
   const { route } = useLocation();
   const [reloads, setReloads] = useState(0);
+  const [filter, setFilter] = useState('');
   const { data, error } = useLive(async () => {
     const roles = (await get(api.GET('/roles'), 'roles')).data ?? [];
-    return [...roles].sort((a, b) => a.name.localeCompare(b.name));
+    // Tool names, for the allowlist's autocomplete and unknown-name warning.
+    const tools = (await get(api.GET('/tools', { params: { query: { limit: 1000 } } }), 'tools')).data ?? [];
+    return {
+      roles: [...roles].sort((a, b) => a.name.localeCompare(b.name)),
+      toolNames: [...new Set(tools.map((t) => t.name).filter((n): n is string => !!n))].sort((a, b) => a.localeCompare(b)),
+    };
   }, [], reloads);
+  const f = filter.trim().toLowerCase();
+  const shown = (data?.roles ?? []).filter((r) => !f || `${r.name} ${r.description ?? ''}`.toLowerCase().includes(f));
 
   const remove = async (roleName: string) => {
     if (!(await ask({ title: `Delete role ${roleName}?`, message: 'The role skill is removed; conversations that asked for it fall back to the default role.', confirm: 'Delete', danger: true }))) return;
@@ -452,22 +510,28 @@ function RolesView({ name }: { name?: string }) {
     <Split name="builder-roles" noun="roles" open={!!name}>
       <nav class={split.list} aria-label="Roles">
         <ListHead>
+          <input class="input" type="search" aria-label="Filter roles" placeholder="Filter roles" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
           <a class="button" href={roleHref('new')}>
             New role
           </a>
+          {data && (
+            <span class="muted">
+              {data.roles.length} role{data.roles.length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
-        {data && data.length === 0 && <p class="empty">No roles.</p>}
-        {data && data.length > 0 && (
+        {data && shown.length === 0 && <p class="empty">{data.roles.length === 0 ? 'No roles.' : 'No role matches.'}</p>}
+        {shown.length > 0 && (
           <ul>
-            {data.map((r) => (
+            {shown.map((r) => (
               <li key={r.name}>
                 <a href={roleHref(r.name)} class={split.row} aria-current={r.name === name ? 'page' : undefined}>
                   <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
                   <span class={split.name}>{r.name}</span>
                   <span class={split.meta}>
-                    {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null].filter(Boolean).join(' · ')}
+                    {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null, r.description].filter(Boolean).join(' · ')}
                   </span>
                 </a>
               </li>
@@ -476,7 +540,7 @@ function RolesView({ name }: { name?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Role">
-        {data && (name ? <RoleForm key={name} name={name} roles={data} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : (
+        {data && (name ? <RoleForm key={name} name={name} roles={data.roles} toolNames={data.toolNames} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} /> : (
           <Blank title="Roles">
             A role is a persona with a tool allowlist, stored as a skill with a role block. Pick one to edit it, or start from New role.
           </Blank>
@@ -486,7 +550,7 @@ function RolesView({ name }: { name?: string }) {
   );
 }
 
-function RoleForm({ name, roles, onSaved, onDelete }: { name: string; roles: RoleInfo[]; onSaved: () => void; onDelete: (name: string) => void }) {
+function RoleForm({ name, roles, toolNames, onSaved, onDelete }: { name: string; roles: RoleInfo[]; toolNames: string[]; onSaved: () => void; onDelete: (name: string) => void }) {
   const isNew = name === 'new';
   const existing = roles.find((r) => r.name === name);
   const [roleName, setRoleName] = useState(existing?.name ?? '');
@@ -499,14 +563,22 @@ function RoleForm({ name, roles, onSaved, onDelete }: { name: string; roles: Rol
   const [interactive, setInteractive] = useState(existing?.interactive ?? false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The structural toggles do not always round-trip (the daemon strips them
+  // for agent-authored roles), so the dirty flag reads only what does.
+  const dirty =
+    !isNew &&
+    !!existing &&
+    (description !== (existing.description ?? '') || allTools !== existing.all_tools || (!allTools && toolsText !== (existing.tools ?? []).join(', ')));
+  const enteredTools = toolsText
+    .split(',')
+    .map((t) => t.trim())
+    .filter(Boolean);
+  const unknownTools = enteredTools.filter((t) => !toolNames.includes(t));
 
   const save = async () => {
     setBusy(true);
     setError(null);
-    const tools = toolsText
-      .split(',')
-      .map((t) => t.trim())
-      .filter(Boolean);
+    const tools = enteredTools;
     try {
       if (isNew) {
         const { error: e } = await api.POST('/roles', {
@@ -534,6 +606,7 @@ function RoleForm({ name, roles, onSaved, onDelete }: { name: string; roles: Rol
         <div class={detail.title}>
           <h2>{isNew ? 'New role' : name}</h2>
           {existing?.leaf && <span class="muted">delegatable leaf</span>}
+          {dirty && <span class="muted">Unsaved changes</span>}
         </div>
         {!isNew && (
           <div class={detail.actions}>
@@ -571,7 +644,24 @@ function RoleForm({ name, roles, onSaved, onDelete }: { name: string; roles: Rol
           {!allTools && (
             <>
               <label for="role-tools">Tool allowlist (comma-separated)</label>
-              <input id="role-tools" class="input" value={toolsText} onInput={(e) => setToolsText((e.target as HTMLInputElement).value)} placeholder="shell, file_read, file_write" />
+              <input
+                id="role-tools"
+                class="input"
+                list="role-tool-names"
+                value={toolsText}
+                onInput={(e) => setToolsText((e.target as HTMLInputElement).value)}
+                placeholder="shell, file_read, file_write"
+              />
+              <datalist id="role-tool-names">
+                {toolNames.map((n) => (
+                  <option key={n} value={n} />
+                ))}
+              </datalist>
+              {unknownTools.length > 0 && (
+                <p class="muted" role="alert">
+                  Unknown tools: {unknownTools.join(', ')}
+                </p>
+              )}
             </>
           )}
         </div>
@@ -591,7 +681,7 @@ function RoleForm({ name, roles, onSaved, onDelete }: { name: string; roles: Rol
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !roleName.trim() || (!allTools && toolsText.trim() === '' && !isNew && (existing?.tools ?? []).length === 0)}>
-            {isNew ? 'Create' : 'Save'}
+            {busy ? 'Saving…' : isNew ? 'Create' : 'Save'}
           </button>
         </div>
       </form>
@@ -628,6 +718,11 @@ function SkillsView({ name }: { name?: string }) {
           <a class="button" href={skillHref('new')}>
             New skill
           </a>
+          {data && (
+            <span class="muted">
+              {data.length} skill{data.length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
@@ -671,6 +766,8 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
   // Only agent-written skills are editable through REST; builtin and user
   // skills are read-only (the daemon refuses the write).
   const writable = isNew || source === 'agent';
+  // The loaded values, to tell "unsaved changes" from a saved form.
+  const savedRef = useRef<{ description: string; tagsText: string; content: string } | null>(null);
 
   useEffect(() => {
     if (isNew) return;
@@ -682,11 +779,13 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
         setLoadError(errorMessage(e, 'Could not load the skill.'));
         return;
       }
+      const loaded = { description: s.description ?? '', tagsText: (s.tags ?? []).join(', '), content: s.content };
+      savedRef.current = loaded;
       setSource(s.source);
       setSkillName(s.name);
-      setDescription(s.description ?? '');
-      setTagsText((s.tags ?? []).join(', '));
-      setContent(s.content);
+      setDescription(loaded.description);
+      setTagsText(loaded.tagsText);
+      setContent(loaded.content);
     })();
     return () => {
       alive = false;
@@ -709,6 +808,7 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
         const { error: e } = await api.PATCH('/skills/{name}', { params: { path: { name } }, body: { description: description || undefined, tags, content } });
         if (e) throw new Error(errorMessage(e, 'Could not update the skill.'));
       }
+      savedRef.current = { description, tagsText, content };
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -717,6 +817,12 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
     }
   };
 
+  const dirty =
+    !isNew &&
+    writable &&
+    savedRef.current !== null &&
+    (description !== savedRef.current.description || tagsText !== savedRef.current.tagsText || content !== savedRef.current.content);
+
   if (loadError) return <p class="card error">{loadError}</p>;
   return (
     <article class={`card ${detail.detail}`}>
@@ -724,6 +830,7 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
         <div class={detail.title}>
           <h2>{isNew ? 'New skill' : name}</h2>
           {source && <span class={detail.badge}>{source}</span>}
+          {dirty && <span class="muted">Unsaved changes</span>}
         </div>
         {!isNew && (
           <div class={detail.actions}>
@@ -768,7 +875,7 @@ function SkillForm({ name, onSaved, onDelete }: { name: string; onSaved: () => v
         {writable && (
           <div class={detail.actions}>
             <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !skillName.trim() || !content.trim()}>
-              {isNew ? 'Create' : 'Save'}
+              {busy ? 'Saving…' : isNew ? 'Create' : 'Save'}
             </button>
           </div>
         )}
@@ -806,6 +913,11 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
           <a class="button" href="/builder/data/new">
             New key
           </a>
+          {data && (
+            <span class="muted">
+              {data.length} key{data.length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
@@ -816,7 +928,10 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
               <li key={e.key}>
                 <a href={dataHref(e.key)} class={split.row} aria-current={e.key === memoryKey ? 'page' : undefined}>
                   <span class={`${split.name} ${tools.wide}`}>{e.key}</span>
-                  <span class={split.meta}>{bytes(e.bytes)}</span>
+                  <span class={split.meta}>
+                    {bytes(e.bytes)}
+                    {e.updated_at ? ` · ${ago(e.updated_at)}` : ''}
+                  </span>
                 </a>
               </li>
             ))}
@@ -824,29 +939,42 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
         )}
       </nav>
       <section class={split.pane} aria-label="Memory key">
-        {memoryKey !== undefined && !isNew ? (
-          <MemoryEditor key={memoryKey} k={memoryKey} onSaved={() => setReloads((n) => n + 1)} onDelete={remove} />
-        ) : (
+        {memoryKey === undefined ? (
+          <Blank title="Data">
+            The key-value memory every agent reads and writes through memory_get and memory_set. Pick a key to edit its value, or start a new one.
+          </Blank>
+        ) : isNew ? (
           <NewKey
             onCreated={(key) => {
               route(dataHref(key));
               setReloads((n) => n + 1);
             }}
           />
+        ) : (
+          <MemoryEditor
+            key={memoryKey}
+            k={memoryKey}
+            updatedAt={(data ?? []).find((e) => e.key === memoryKey)?.updated_at}
+            onSaved={() => setReloads((n) => n + 1)}
+            onDelete={remove}
+          />
         )}
         <p class="muted">
-          The SQL side of the store is browsable on <a href="/data/database">Data → Database</a>.
+          The SQL side of the store is browsable on <a href="/data/database">Data → Database</a>; the keys are browsable read-only on{' '}
+          <a href="/data/memory">Data → Memory</a>.
         </p>
       </section>
     </Split>
   );
 }
 
-function MemoryEditor({ k, onSaved, onDelete }: { k: string; onSaved: () => void; onDelete: (key: string) => void }) {
+function MemoryEditor({ k, updatedAt, onSaved, onDelete }: { k: string; updatedAt?: string; onSaved: () => void; onDelete: (key: string) => void }) {
   const [value, setValue] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // The loaded value, to tell "unsaved changes" from a saved one.
+  const savedRef = useRef<string | null>(null);
 
   useEffect(() => {
     let alive = true;
@@ -861,6 +989,7 @@ function MemoryEditor({ k, onSaved, onDelete }: { k: string; onSaved: () => void
         setLoadError(errorMessage(e, 'Could not read the key.'));
         return;
       }
+      savedRef.current = v.value;
       setValue(v.value);
     })();
     return () => {
@@ -875,8 +1004,13 @@ function MemoryEditor({ k, onSaved, onDelete }: { k: string; onSaved: () => void
     const { error: e } = await api.PUT('/memory/value', { body: { key: k, value } });
     setBusy(false);
     if (e) setError(errorMessage(e, 'Could not write the key.'));
-    else onSaved();
+    else {
+      savedRef.current = value;
+      onSaved();
+    }
   };
+
+  const dirty = value !== null && savedRef.current !== null && value !== savedRef.current;
 
   if (loadError) return <p class="card error">{loadError}</p>;
   if (value === null) return <p class="card muted">Loading…</p>;
@@ -887,7 +1021,11 @@ function MemoryEditor({ k, onSaved, onDelete }: { k: string; onSaved: () => void
           <h2>
             <code>{k}</code>
           </h2>
-          <span class="muted">{bytes(new TextEncoder().encode(value).length)}</span>
+          <span class="muted">
+            {bytes(new TextEncoder().encode(value).length)}
+            {updatedAt ? ` · ${ago(updatedAt)}` : ''}
+          </span>
+          {dirty && <span class="muted">Unsaved changes</span>}
         </div>
         <div class={detail.actions}>
           <button type="button" class={`${detail.action} ${detail.danger}`} disabled={busy} onClick={() => onDelete(k)}>
@@ -914,7 +1052,7 @@ function MemoryEditor({ k, onSaved, onDelete }: { k: string; onSaved: () => void
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy}>
-            Save
+            {busy ? 'Saving…' : 'Save'}
           </button>
         </div>
       </form>
@@ -968,7 +1106,7 @@ function NewKey({ onCreated }: { onCreated: (key: string) => void }) {
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !key.trim()}>
-            Create
+            {busy ? 'Creating…' : 'Create'}
           </button>
         </div>
       </form>

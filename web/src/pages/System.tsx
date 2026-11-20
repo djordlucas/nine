@@ -5,6 +5,8 @@ import { useLive } from '../live';
 import { Markdown } from '../markdown';
 import { docLink, topicPath, type DocKind } from '../system';
 import { ask } from '../components/Confirm';
+import { copyText } from '../clipboard';
+import { Blank } from '../components/Blank';
 import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
@@ -62,9 +64,25 @@ function ConfigView() {
   const { data, error } = useLive(async () => (await get(api.GET('/config'), 'the configuration')).toml, []);
   return (
     <section class={`card ${styles.config}`} aria-labelledby="config-h">
-      <h2 id="config-h" class={styles.title}>
-        Configuration
-      </h2>
+      <header class={detail.head}>
+        <div class={detail.title}>
+          <h2 id="config-h" class={styles.title}>
+            Configuration
+          </h2>
+        </div>
+        <div class={detail.actions}>
+          <button
+            type="button"
+            class={`${detail.action} ${detail.iconAction}`}
+            aria-label="Copy the TOML"
+            title="Copy the TOML"
+            disabled={!data}
+            onClick={() => data && void copyText(data)}
+          >
+            <Icon name="link" size={16} />
+          </button>
+        </div>
+      </header>
       <p class="muted">
         What the daemon runs with: its config file, then the <code>NINE_*</code> environment variables. Only what is
         set is shown; everything else takes its default. Keys and tokens are hidden. Changing a setting means editing
@@ -91,21 +109,48 @@ function Overview() {
           <dl class={detail.facts}>
             <dt>Status</dt>
             <dd>{data.status ?? '—'}</dd>
+            {data.instance_name && (
+              <>
+                <dt>Instance</dt>
+                <dd>{data.instance_name}</dd>
+              </>
+            )}
             <dt>Version</dt>
             <dd>{data.version ?? '—'}</dd>
             <dt>Uptime</dt>
             <dd>{data.uptime ?? '—'}</dd>
+            {data.model && (
+              <>
+                <dt>Model</dt>
+                <dd>
+                  {data.model}
+                  {data.provider ? ` · ${data.provider}` : ''}
+                </dd>
+              </>
+            )}
             <dt>Active sessions</dt>
-            <dd>{data.active_sessions ?? 0}</dd>
+            <dd>
+              <a href="/system/sessions">{data.active_sessions ?? 0}</a>
+            </dd>
             {data.max_running !== undefined && (
               <>
                 <dt>Processes at once</dt>
                 <dd>up to {data.max_running}</dd>
               </>
             )}
+            <dt>Tools</dt>
+            <dd>
+              <a href="/builder/tools">{data.tools?.length ?? 0}</a>
+            </dd>
             <dt>Plugins</dt>
             <dd>
               <a href="/builder/tools/plugins">{data.plugins?.length ?? 0}</a>
+            </dd>
+            <dt>Store</dt>
+            <dd>
+              <a href="/journal">
+                {data.memory?.events_count ?? 0} events · {data.memory?.memories_count ?? 0} memory · {data.memory?.workflows_count ?? 0} workflows
+              </a>
             </dd>
           </dl>
         )}
@@ -194,6 +239,11 @@ function SessionsView({ id }: { id?: string }) {
             value={filter}
             onInput={(e) => setFilter(e.currentTarget.value)}
           />
+          {data && (
+            <span class="muted">
+              {data.length} session{data.length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!data && !error && <p class="muted">Loading…</p>}
@@ -220,7 +270,9 @@ function SessionsView({ id }: { id?: string }) {
         {id ? (
           <SessionDetail key={id} id={id} session={data?.find((s) => s.id === id)} loaded={!!data} onDeleted={() => setDeleted((n) => n + 1)} />
         ) : (
-          <p class="empty">Every session Nine holds, process sessions included. Choose one.</p>
+          <Blank title="Sessions">
+            Every session Nine holds, process sessions included. Choose one to see what it is, and what deleting it would remove.
+          </Blank>
         )}
       </section>
     </Split>
@@ -274,6 +326,9 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
         <dt>Id</dt>
         <dd>
           <code>{s.id}</code>
+          <button type="button" class={styles.copyId} aria-label="Copy id" title="Copy id" onClick={() => void copyText(s.id)}>
+            <Icon name="link" size={13} />
+          </button>
         </dd>
         <dt>Last active</dt>
         <dd>{age(s.age_seconds)}</dd>
@@ -284,11 +339,15 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
         <dt>Retention</dt>
         <dd>{s.protected ? 'kept: it has an active goal or session plan' : 'removed once it passes [daemon] session_retention_days'}</dd>
       </dl>
-      <p>
+      <p class={detail.actions}>
         {isProcess ? (
-          <a href={`/processes/${encodeURIComponent(s.id)}`}>Open its process</a>
+          <a class={`button ${detail.primary}`} href={`/processes/${encodeURIComponent(s.id)}`}>
+            Open its process
+          </a>
         ) : (
-          <a href={`/conversations/${encodeURIComponent(s.id)}`}>Open the conversation</a>
+          <a class={`button ${detail.primary}`} href={`/conversations/${encodeURIComponent(s.id)}`}>
+            Open the conversation
+          </a>
         )}
       </p>
     </article>
@@ -298,6 +357,8 @@ function SessionDetail(props: { id: string; session?: Session; loaded: boolean; 
 function Reflections() {
   const [agent, setAgent] = useState('self-reflection');
   const [asked, setAsked] = useState('self-reflection');
+  // Known sessions, as suggestions for the reflecting-session field.
+  const { data: sessions } = useLive(async () => (await get(api.GET('/sessions', { params: { query: { limit: 1000 } } }), 'sessions')).data ?? [], []);
   const { data, error } = useLive(
     async () => {
       const r = await get(api.GET('/reflections', { params: { query: { agent: asked } } }), 'reflections');
@@ -321,7 +382,15 @@ function Reflections() {
           setAsked(agent.trim() || 'self-reflection');
         }}
       >
-        <input class="input" aria-label="Reflecting session" value={agent} onInput={(e) => setAgent(e.currentTarget.value)} />
+        <input class="input" aria-label="Reflecting session" list="reflection-sessions" placeholder="self-reflection" value={agent} onInput={(e) => setAgent(e.currentTarget.value)} />
+        <datalist id="reflection-sessions">
+          <option value="self-reflection" />
+          {(sessions ?? []).map((x) => (
+            <option key={x.id} value={x.id}>
+              {x.name || x.id}
+            </option>
+          ))}
+        </datalist>
         <button type="submit" class="button">
           Show
         </button>
@@ -367,9 +436,15 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
             value={filter}
             onInput={(e) => setFilter(e.currentTarget.value)}
           />
+          {topics && (
+            <span class="muted">
+              {topics[kind].length} topic{topics[kind].length === 1 ? '' : 's'}
+            </span>
+          )}
         </ListHead>
         {error && <p class="error">{error}</p>}
         {!topics && !error && <p class="muted">Loading…</p>}
+        {topics && list.length === 0 && <p class="empty">No topic matches.</p>}
         {list.length > 0 && (
           <ul>
             {list.map((t) => (
@@ -386,9 +461,7 @@ function DocsView({ kind, topic }: { kind: DocKind; topic?: string }) {
         {topic && topics ? (
           <Topic key={`${kind}/${topic}`} kind={kind} topic={topic} topics={topics} />
         ) : (
-          <p class="empty">
-            {kind === 'docs' ? 'The documentation this build of Nine embeds.' : 'The specification this build of Nine implements.'}
-          </p>
+          <Blank title={label}>{kind === 'docs' ? 'The documentation this build of Nine embeds. Pick a topic.' : 'The specification this build of Nine implements. Pick a topic.'}</Blank>
         )}
       </section>
     </Split>

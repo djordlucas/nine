@@ -72,21 +72,31 @@
   border-top: 1px solid var(--border);
 }
 
+/* The row's header line: the expand toggle, then a one-click filter by agent. */
 .rowHead {
   display: grid;
-  grid-template-columns: auto auto auto 1fr;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: var(--space-3);
+  padding: 0 var(--space-3);
+  min-height: var(--touch);
+}
+
+.rowToggle {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr);
   align-items: baseline;
   gap: var(--space-3);
   width: 100%;
   min-height: var(--touch);
-  padding: var(--space-2) var(--space-3);
+  padding: var(--space-2) 0;
   border: 0;
   background: none;
   text-align: left;
   cursor: pointer;
 }
 
-.rowHead:hover {
+.rowToggle:hover {
   background: var(--surface-2);
 }
 
@@ -100,6 +110,8 @@
 
 .who {
   font-family: var(--mono);
+  padding: var(--space-2) 0;
+  cursor: pointer;
 }
 
 .type {
@@ -179,9 +191,9 @@
   justify-self: center;
 }
 
-/* On a phone the summary takes its own line under time, type and agent. */
+/* On a phone the summary takes its own line under time and type. */
 @media (max-width: 767px) {
-  .rowHead {
+  .rowToggle {
     grid-template-columns: auto auto 1fr;
     row-gap: 0;
   }

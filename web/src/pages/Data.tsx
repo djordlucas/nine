@@ -692,7 +692,14 @@ function Sql() {
   const [error, setError] = useState<string | null>(null);
   const run = async (e: Event) => {
     e.preventDefault();
-    if (!sql.trim()) return;
+    const stmt = sql.trim();
+    if (!stmt) return;
+    // A write from the browser is as sharp as a shell command: ask first,
+    // showing the statement. Reads run straight away.
+    if (!/^(select|pragma|explain)\b/i.test(stmt)) {
+      const shown = stmt.length > 300 ? `${stmt.slice(0, 300)}…` : stmt;
+      if (!(await ask({ title: 'Run a write statement?', message: shown, confirm: 'Run it', danger: true }))) return;
+    }
     setBusy(true);
     setError(null);
     const { data, error: err } = await api.POST('/database/sql', { body: { sql } });
@@ -822,7 +829,10 @@ function Memory({ memoryKey }: { memoryKey?: string }) {
         {memoryKey !== undefined ? (
           <MemoryValue key={memoryKey} memoryKey={memoryKey} />
         ) : (
-          <p class="empty">What Nine keeps in its key-value memory. Choose a key to read its value.</p>
+          <p class="empty">
+            What Nine keeps in its key-value memory. Choose a key to read its value, or{' '}
+            <a href="/builder/data">edit keys in the Builder</a>.
+          </p>
         )}
       </section>
     </Split>
@@ -857,6 +867,11 @@ function MemoryValue({ memoryKey }: { memoryKey: string }) {
             <code>{data.key}</code>
           </h2>
           <span class="muted">{bytes(new TextEncoder().encode(data.value).length)}</span>
+        </div>
+        <div class={detail.actions}>
+          <a class={`${detail.action} ${detail.secondary}`} href={`/builder/data?key=${encodeURIComponent(data.key)}`}>
+            Edit in Builder
+          </a>
         </div>
       </header>
       <pre class={styles.memoryValue}>{data.value}</pre>

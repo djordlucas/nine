@@ -127,6 +127,8 @@ function Questions({ data }: { data: Awaited<ReturnType<typeof loadAttention>> |
 
 function Notifications() {
   const [marked, setMarked] = useState(0);
+  const [filter, setFilter] = useState('');
+  const [unseenOnly, setUnseenOnly] = useState(false);
   const { data, error } = useLive(
     async () => {
       const list =
@@ -137,6 +139,8 @@ function Notifications() {
     marked,
   );
   const unseen = data?.filter((n) => !n.seen).length ?? 0;
+  const f = filter.trim().toLowerCase();
+  const shown = (data ?? []).filter((n) => (!unseenOnly || !n.seen) && (!f || (n.message ?? '').toLowerCase().includes(f)));
   // Opening the Inbox is reading it: what it shows as new is marked seen,
   // and stays highlighted until the page is left.
   useEffect(() => {
@@ -152,12 +156,26 @@ function Notifications() {
           <Icon name="reload" size={16} />
         </button>
       </header>
+      <div class={styles.noteFilter}>
+        <input
+          class="input"
+          type="search"
+          aria-label="Filter notifications"
+          placeholder="Filter notifications"
+          value={filter}
+          onInput={(e) => setFilter(e.currentTarget.value)}
+        />
+        <button type="button" class={`button ${styles.unseenToggle}`} aria-pressed={unseenOnly} onClick={() => setUnseenOnly((v) => !v)}>
+          Unseen only
+        </button>
+      </div>
       {error && <p class="error">{error}</p>}
       {!data && !error && <p class="muted">Loading…</p>}
       {data && data.length === 0 && <p class="empty">No notifications.</p>}
-      {data && data.length > 0 && (
+      {data && data.length > 0 && shown.length === 0 && <p class="empty">No notification matches.</p>}
+      {shown.length > 0 && (
         <ul class={styles.notes}>
-          {data.map((n) => (
+          {shown.map((n) => (
             <li key={n.id} class={n.seen ? undefined : styles.unseen}>
               <span class={styles.note}>{n.message}</span>
               <span class={`muted ${styles.meta}`}>

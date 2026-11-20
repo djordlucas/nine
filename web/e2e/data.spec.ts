@@ -54,6 +54,10 @@ test('a table is created, a row added, changed and deleted', async ({ page }, in
   await page.goto('/data/sql');
   await page.getByRole('textbox', { name: 'Statement' }).fill(`CREATE TABLE ${table} (name TEXT NOT NULL, n INTEGER)`);
   await page.getByRole('button', { name: 'Run' }).click();
+  // A write asks first, showing the statement; confirming runs it.
+  const dialog = page.getByRole('dialog', { name: 'Run a write statement?' });
+  await expect(dialog).toContainText('CREATE TABLE');
+  await dialog.getByRole('button', { name: 'Run it' }).click();
   const sql = page.getByRole('region', { name: 'Run a statement' });
   await expect(sql.getByRole('status')).toContainText('0 rows changed');
 
@@ -88,7 +92,26 @@ test('a table is created, a row added, changed and deleted', async ({ page }, in
   await page.goto('/data/sql');
   await page.getByRole('textbox', { name: 'Statement' }).fill(`ATTACH DATABASE ':memory:' AS o`);
   await page.getByRole('button', { name: 'Run' }).click();
+  await page.getByRole('dialog', { name: 'Run a write statement?' }).getByRole('button', { name: 'Run it' }).click();
   await expect(sql.getByRole('alert')).toContainText('attach');
+});
+
+test('a read statement runs without asking; a cancelled write never runs', async ({ page }) => {
+  await signIn(page);
+  await page.goto('/data/sql');
+  // A read goes straight through: no dialog, a result.
+  await page.getByRole('textbox', { name: 'Statement' }).fill('SELECT 1 AS one');
+  await page.getByRole('button', { name: 'Run' }).click();
+  await expect(page.getByRole('dialog')).toHaveCount(0);
+  await expect(page.getByRole('table', { name: 'Result' }).getByRole('columnheader', { name: 'one' })).toBeVisible();
+  // A write asks, and cancelling leaves no result behind.
+  await page.getByRole('textbox', { name: 'Statement' }).fill('DELETE FROM sqlite_master');
+  await page.getByRole('button', { name: 'Run' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Run a write statement?' });
+  await expect(dialog).toContainText('DELETE FROM sqlite_master');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByRole('table', { name: 'Result' })).toHaveCount(1); // still the read's
 });
 
 test('the self-model reads as every turn carries it', async ({ page }) => {
@@ -103,10 +126,16 @@ test('the self-model reads as every turn carries it', async ({ page }) => {
 test('the memory lists every key and reads one', async ({ page }) => {
   await signIn(page);
   await page.goto('/data/memory');
+  // The bare list points at the Builder for editing.
+  if (test.info().project.name === 'desktop') {
+    await expect(page.getByRole('link', { name: 'edit keys in the Builder' })).toHaveAttribute('href', '/builder/data');
+  }
   const keys = page.getByRole('navigation', { name: 'Memory keys' });
   await keys.getByRole('link', { name: /self\/identity/ }).click();
   const pane = page.getByRole('region', { name: 'Memory key' });
   await expect(pane.getByRole('heading', { name: 'self/identity' })).toBeVisible();
   await expect(pane.locator('pre')).toContainText('Nine');
   await expect(pane.getByRole('textbox')).toHaveCount(0); // read-only: nothing to edit
+  // ...and the key's page links to the Builder's editor for it.
+  await expect(pane.getByRole('link', { name: 'Edit in Builder' })).toHaveAttribute('href', '/builder/data?key=self%2Fidentity');
 });
