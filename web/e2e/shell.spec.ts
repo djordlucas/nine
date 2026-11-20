@@ -46,6 +46,15 @@ test('the rail shows on desktop and the tab bar on a phone', async ({ page, isMo
   await expect(navs.filter({ hasNot: page.getByRole('link', { name: 'Nine' }) })).toBeVisible({ visible: isMobile });
 });
 
+test('the theme control is an icon button that keeps its name and cycles', async ({ page }) => {
+  await signIn(page);
+  const themeBtn = page.getByRole('button', { name: /^Theme: / });
+  await expect(themeBtn).toBeVisible();
+  const before = await themeBtn.getAttribute('aria-label');
+  await themeBtn.click();
+  await expect(themeBtn).not.toHaveAttribute('aria-label', before ?? '');
+});
+
 test('signing out returns to the sign-in page and ends the session', async ({ page }) => {
   await signIn(page);
   await page.getByRole('button', { name: 'Sign out' }).click();

@@ -78,3 +78,20 @@ test('pausing the journal holds new events until resumed', async ({ page, reques
     await deleteGoal(request, id);
   }
 });
+
+test('a journal row filters by its agent in one click and links to open it', async ({ page, request }) => {
+  const id = await createGoal(request, `e2e row ${Date.now()}`);
+  await deleteGoal(request, id);
+  await signIn(page);
+  await page.goto('/journal');
+  const list = page.getByRole('list', { name: 'Journal events' });
+  const row = list.getByRole('listitem').filter({ has: page.getByRole('button', { name: /goal_deleted/ }) }).first();
+  await expect(row).toBeVisible();
+  // The row header's agent id is a one-click filter (the row's second button).
+  await row.locator('button').last().click();
+  const field = page.getByLabel('Session or process');
+  await expect.poll(() => field.inputValue()).toMatch(new RegExp(`^${id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`));
+  // Expanding a row offers an Open link to the agent's page.
+  await row.getByRole('button', { name: /goal_deleted/ }).click();
+  await expect(row.getByRole('link', { name: 'Open' })).toHaveAttribute('href', /\/(conversations|processes)\//);
+});

@@ -294,3 +294,28 @@
   font-weight: 400;
   letter-spacing: 0;
 }
+
+/* The rail's controls are icons with a tooltip on a desktop; the phone's
+   header keeps the text, where there is room for it. */
+.control {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+@media (min-width: 768px) {
+  .rail .control {
+    padding: 0 var(--space-2);
+  }
+
+  .rail .control .controlText {
+    display: none;
+  }
+}
+
+/* Very narrow phones keep the icons and the badge; the labels go. */
+@media (max-width: 359px) {
+  .tabLabel {
+    display: none;
+  }
+}

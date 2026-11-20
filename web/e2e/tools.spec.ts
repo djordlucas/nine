@@ -68,6 +68,14 @@ test('the inbox shows what waits, the notifications and the capabilities in forc
     await expect(page.getByRole('heading', { name, level: 2 })).toBeVisible();
   }
   await expect(page.getByText('No request is waiting.')).toBeVisible();
+  // The notifications card filters by text and by unseen.
+  await expect(page.getByRole('searchbox', { name: 'Filter notifications' })).toBeVisible();
+  const unseen = page.getByRole('button', { name: 'Unseen only' });
+  await expect(unseen).toHaveAttribute('aria-pressed', 'false');
+  await unseen.click();
+  await expect(unseen).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('searchbox', { name: 'Filter notifications' }).fill('zzz-no-such-notification');
+  await unseen.click();
 });
 
 test('a list folds away and stays folded on a desktop; a phone has nothing to fold', async ({ page, isMobile }) => {

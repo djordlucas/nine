@@ -960,7 +960,8 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
           />
         )}
         <p class="muted">
-          The SQL side of the store is browsable on <a href="/data/database">Data → Database</a>.
+          The SQL side of the store is browsable on <a href="/data/database">Data → Database</a>; the keys are browsable read-only on{' '}
+          <a href="/data/memory">Data → Memory</a>.
         </p>
       </section>
     </Split>

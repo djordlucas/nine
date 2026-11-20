@@ -99,6 +99,8 @@ test('a process agent’s activity is its session, read-only', async ({ page, re
   try {
     await signIn(page);
     await page.goto(processPage(id));
+    // The header says what process this is (the section label stays "Agents").
+    await expect(page.getByText(/^Process · goal:/)).toBeVisible();
     const pane = page.getByRole('region', { name: 'Activity' });
     // Its session has an activity once the process has run a turn; until then the pane says so.
     await expect(pane.getByRole('list', { name: 'Messages' }).or(pane.getByText('has not run a turn yet'))).toBeVisible();

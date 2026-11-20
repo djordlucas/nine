@@ -131,12 +131,14 @@ function Controls() {
   const label = { system: 'Theme: system', light: 'Theme: light', dark: 'Theme: dark' }[theme.value];
   return (
     <>
-      <button type="button" class={styles.control} onClick={cycleTheme}>
-        {label}
+      <button type="button" class={styles.control} onClick={cycleTheme} aria-label={label} title={label}>
+        <Icon name="theme" size={16} />
+        <span class={styles.controlText}>{label}</span>
       </button>
       {authRequired.value && (
-        <button type="button" class={styles.control} onClick={() => void signOut()}>
-          Sign out
+        <button type="button" class={styles.control} onClick={() => void signOut()} aria-label="Sign out" title="Sign out">
+          <Icon name="power" size={16} />
+          <span class={styles.controlText}>Sign out</span>
         </button>
       )}
     </>

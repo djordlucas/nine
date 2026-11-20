@@ -141,12 +141,16 @@ function Row({ e, open, toggle, onAgent }: { e: JournalEvent; open: boolean; tog
   const omitted = omittedBytes(e);
   return (
     <li class={styles.row}>
-      <button type="button" class={styles.rowHead} aria-expanded={open} onClick={toggle}>
-        <span class={styles.time}>{timeOf(e)}</span>
-        <span class={`${styles.type} ${styles[eventKind(e.type)]}`}>{e.type}</span>
-        <span class={styles.who}>{shortId(e.agent_id)}</span>
-        <span class={styles.summary}>{summarize(e)}</span>
-      </button>
+      <div class={styles.rowHead}>
+        <button type="button" class={styles.rowToggle} aria-expanded={open} onClick={toggle}>
+          <span class={styles.time}>{timeOf(e)}</span>
+          <span class={`${styles.type} ${styles[eventKind(e.type)]}`}>{e.type}</span>
+          <span class={styles.summary}>{summarize(e)}</span>
+        </button>
+        <button type="button" class={`${styles.who} ${styles.link}`} onClick={() => onAgent(e.agent_id)} title={`Show only ${e.agent_id}`}>
+          {shortId(e.agent_id)}
+        </button>
+      </div>
       {open && (
         <div class={styles.detail}>
           <dl class={styles.facts}>
@@ -156,7 +160,14 @@ function Row({ e, open, toggle, onAgent }: { e: JournalEvent; open: boolean; tog
             <dd>
               <button type="button" class={styles.link} onClick={() => onAgent(e.agent_id)} title="Show only this one">
                 {e.agent_id}
-              </button>
+              </button>{' '}
+              ·{' '}
+              <a
+                class={styles.link}
+                href={e.agent_id.includes(':') ? `/processes/${encodeURIComponent(e.agent_id)}` : `/conversations/${encodeURIComponent(e.agent_id)}`}
+              >
+                Open
+              </a>
             </dd>
             {e.turn > 0 && (
               <>

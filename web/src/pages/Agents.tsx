@@ -439,17 +439,22 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
     setCreated((n) => n + 1);
   };
 
-  // The counts ride at the right of the shell's "Agents" label row.
+  // The counts ride at the right of the shell's "Agents" label row — or, on a
+  // process page (/processes/:id renders in this section), what it is.
   useEffect(() => {
     headerSlot.value = (
       <span class={styles.counts}>
-        {procs.data && (
-          <>
-            <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
-            <span>
-              {(data ?? []).length} conversations · {procs.data.list.length} processes
-            </span>
-          </>
+        {currentIsProcess && current ? (
+          <span>Process · {shortId(current)}</span>
+        ) : (
+          procs.data && (
+            <>
+              <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
+              <span>
+                {(data ?? []).length} conversations · {procs.data.list.length} processes
+              </span>
+            </>
+          )
         )}
       </span>
     );
