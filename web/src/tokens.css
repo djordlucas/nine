@@ -1,7 +1,7 @@
 /* Design tokens (adr/web-ui.md §7). Components use these, never raw values.
    Dark mode follows the system unless data-theme on <html> overrides it. */
 :root {
-  --bg: #f7f7f8;
+  --bg: #f6f7fa;
   --surface: #ffffff;
   --surface-2: #f0f1f3;
   --border: #dcdee3;
@@ -30,9 +30,11 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --radius: 8px;
-  --radius-lg: 12px;
-  --shadow: none;
+  --radius: 10px;
+  --radius-lg: 16px;
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
+  --shadow-md: 0 4px 16px rgb(16 24 40 / 0.12);
+  --shadow-lg: 0 8px 24px rgb(16 24 40 / 0.16);
   --touch: 44px;
 
   --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
@@ -50,11 +52,14 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0f1115;
+    --bg: #0e1014;
     --surface: #171a20;
     --surface-2: #1f232b;
     --border: #2c313b;
     --edge: var(--border);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
+    --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
     --ink: var(--accent);
     --ink-text: var(--accent-text);
     --text: #e8eaee;
@@ -76,11 +81,14 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #0f1115;
+  --bg: #0e1014;
   --surface: #171a20;
   --surface-2: #1f232b;
   --border: #2c313b;
   --edge: var(--border);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
+  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
   --ink: var(--accent);
   --ink-text: var(--accent-text);
   --text: #e8eaee;
@@ -154,6 +162,24 @@ select {
   outline-offset: 2px;
 }
 
+/* One motion rule for every interactive element; reduced motion opts out. */
+@media (prefers-reduced-motion: no-preference) {
+  a,
+  button,
+  input,
+  select,
+  textarea,
+  summary {
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease,
+      box-shadow 0.15s ease,
+      transform 0.15s ease,
+      opacity 0.15s ease;
+  }
+}
+
 h1,
 h2,
 h3 {
@@ -179,6 +205,13 @@ samp {
   padding: var(--space-4);
 }
 
+/* On a desktop a card sits a step above the tinted page. */
+@media (min-width: 768px) {
+  .card {
+    box-shadow: var(--shadow-sm);
+  }
+}
+
 .button {
   min-height: var(--touch);
   padding: 0 var(--space-4);
@@ -188,6 +221,14 @@ samp {
   color: var(--accent-text);
   font-weight: 600;
   cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  filter: brightness(1.06);
+}
+
+.button:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .button:disabled {
