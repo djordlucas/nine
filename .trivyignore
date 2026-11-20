@@ -1,0 +1,17 @@
+# Trivy image-scan ignores, all currently without a Debian bookworm fix
+# ("affected" / "will_not_fix" in the Trivy DB as of 2026-11-20). The runtime
+# stage apt-get dist-upgrades at build time, so these float in with Debian's
+# security feed and fail the CRITICAL,HIGH gate until bookworm ships fixes.
+# Review and drop each line once a fixed package version lands.
+CVE-2023-45853
+CVE-2025-6020
+CVE-2025-69720
+CVE-2026-16742
+CVE-2026-41992
+CVE-2026-53613
+CVE-2026-53615
+CVE-2026-54369
+CVE-2026-78410
+CVE-2026-85091
+CVE-2026-9538
+CVE-2026-97054
