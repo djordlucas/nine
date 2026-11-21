@@ -15,6 +15,7 @@ import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
 import { PluginsView, ToolsView } from './Tools';
+import tabs from '../components/Tabs.module.css';
 import tools from './Tools.module.css';
 import styles from './Builder.module.css';
 
@@ -45,10 +46,10 @@ export function Builder() {
   const { params } = useRoute();
   const view = views.find((v) => path === v.path || path.startsWith(v.path + '/'))?.path ?? '/builder/agents';
   return (
-    <div class={tools.section}>
-      <nav class={tools.views} aria-label="Builder views">
+    <div class={tabs.section}>
+      <nav class={tabs.views} aria-label="Builder views">
         {views.map((v) => (
-          <a key={v.path} href={v.path} class={tools.view} aria-current={v.path === view ? 'page' : undefined}>
+          <a key={v.path} href={v.path} class={tabs.view} aria-current={v.path === view ? 'page' : undefined}>
             {v.label}
           </a>
         ))}

@@ -1,0 +1,19 @@
+/* The pane when nothing in the list is selected: a card whose content sits
+   in the middle, so an empty section still has a shape. */
+.blank {
+  min-height: min(420px, 50dvh);
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  text-align: center;
+  gap: var(--space-2);
+}
+
+.blank h2 {
+  font-size: var(--text-lg);
+}
+
+.blank p {
+  margin: 0;
+  max-width: 46ch;
+}

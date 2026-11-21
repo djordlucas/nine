@@ -11,6 +11,7 @@ import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
+import tabs from '../components/Tabs.module.css';
 import tools from './Tools.module.css';
 import styles from './System.module.css';
 import { Toml } from '../components/Json';
@@ -38,10 +39,10 @@ export function System() {
   const id = param(params.id as string | undefined);
   const view = views.slice(1).find((v) => path === v.path || path.startsWith(v.path + '/'))?.path ?? '/system';
   return (
-    <div class={tools.section}>
-      <nav class={tools.views} aria-label="System views">
+    <div class={tabs.section}>
+      <nav class={tabs.views} aria-label="System views">
         {views.map((v) => (
-          <a key={v.path} href={v.path} class={tools.view} aria-current={v.path === view ? 'page' : undefined}>
+          <a key={v.path} href={v.path} class={tabs.view} aria-current={v.path === view ? 'page' : undefined}>
             {v.label}
           </a>
         ))}
@@ -183,7 +184,7 @@ function Overview() {
           In the CLI only
         </h2>
         <p class="muted">These need the machine Nine runs on (adr/web-ui.md §4).</p>
-        <dl class={detail.facts}>
+        <dl class={`${detail.facts} ${detail.factsStacked}`}>
           <dt>
             <code>nine restore &lt;snapshot&gt;</code>
           </dt>

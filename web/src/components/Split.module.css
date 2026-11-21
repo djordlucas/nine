@@ -2,7 +2,7 @@
    in its place. Every section with a list shares it (Split.tsx). */
 .split {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
@@ -31,7 +31,7 @@
 }
 
 .top > :first-child:not(.fold) {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
 }
 
@@ -82,6 +82,7 @@
   align-items: baseline;
   gap: 2px var(--space-2);
   padding: 6px var(--space-2);
+  border-radius: var(--radius);
   color: inherit;
   font-size: var(--text-sm);
   text-decoration: none;
@@ -92,16 +93,14 @@
 }
 
 .row[aria-current='page'] {
-  background: var(--ink);
-  color: var(--ink-text);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
 }
 
-/* Selected, a row is dark with light text (the reverse in dark mode); its
-   secondary line stays readable on it. */
+/* On the tinted selected row the secondary line stays muted. */
 .row[aria-current='page'] .meta,
 .row[aria-current='page'] :global(.muted) {
-  color: var(--ink-text);
-  opacity: 0.75;
+  color: var(--text-2);
 }
 
 .name {
