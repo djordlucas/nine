@@ -657,6 +657,26 @@
     max-width: 90%;
   }
 
+  /* A phone has no room beside a bubble: the message's buttons move under
+     it, in a row, instead of a 18px column hugging its corner. */
+  .reply,
+  .userRow {
+    flex-direction: column;
+  }
+
+  .side {
+    flex-direction: row;
+    width: auto;
+    align-self: flex-end;
+    gap: var(--space-1);
+  }
+
+  .side .inspect,
+  .side .copy {
+    width: 24px;
+    height: 24px;
+  }
+
   /* A phone has no room to spare: the boxes take the full width. */
   .reply,
   .toolBox,
@@ -761,6 +781,14 @@
     min-height: 0;
     overflow-y: auto;
     padding: var(--space-3) var(--space-4) var(--space-6);
+  }
+
+  /* The transcript reads as a column, not a banner: capped and centered
+     within the chat box, so long lines stay readable. */
+  .timeline > li {
+    width: 100%;
+    max-width: 800px;
+    margin-inline: auto;
   }
 
   .footer {
