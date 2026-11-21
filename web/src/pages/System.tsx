@@ -183,7 +183,7 @@ function Overview() {
           In the CLI only
         </h2>
         <p class="muted">These need the machine Nine runs on (adr/web-ui.md §4).</p>
-        <dl class={detail.facts}>
+        <dl class={`${detail.facts} ${detail.factsStacked}`}>
           <dt>
             <code>nine restore &lt;snapshot&gt;</code>
           </dt>

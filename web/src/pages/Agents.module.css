@@ -114,9 +114,11 @@
   min-width: 0;
 }
 
-/* The back-to-list link spans the activity grid, above the chat and panel. */
+/* The back-to-list link spans the activity grid, above the chat and panel;
+   it hugs the left edge instead of stretching across the row. */
 .backRow {
   grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .activitySide {

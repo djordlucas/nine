@@ -236,6 +236,44 @@ samp {
   cursor: default;
 }
 
+/* The button's quieter kinds: secondary is a filled field with an edge,
+   ghost is bare until hovered, danger is an outlined warning that fills on
+   hover. Only the primary call to action is solid accent. */
+.buttonSecondary {
+  background: var(--surface);
+  border-color: var(--edge);
+  color: var(--text);
+}
+
+.buttonSecondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  filter: none;
+}
+
+.buttonGhost {
+  background: none;
+  border-color: transparent;
+  color: var(--text-2);
+}
+
+.buttonGhost:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+  filter: none;
+}
+
+.buttonDanger {
+  background: none;
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.buttonDanger:hover:not(:disabled) {
+  background: var(--danger);
+  color: #ffffff;
+  filter: none;
+}
+
 .input {
   min-height: var(--touch);
   width: 100%;
@@ -255,10 +293,14 @@ samp {
 }
 
 /* Nothing to show yet, or nothing chosen: one look everywhere, a dashed box
-   that holds the place of what will be there. */
+   that holds the place of what will be there, its line centered. */
 .empty {
   margin: 0;
-  padding: var(--space-3);
+  padding: var(--space-5);
+  min-height: 160px;
+  display: grid;
+  place-content: center;
+  text-align: center;
   border: 1px dashed var(--border);
   border-radius: var(--radius-lg);
   color: var(--text-2);

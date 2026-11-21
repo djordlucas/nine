@@ -165,7 +165,7 @@ function Notifications() {
           value={filter}
           onInput={(e) => setFilter(e.currentTarget.value)}
         />
-        <button type="button" class={`button ${styles.unseenToggle}`} aria-pressed={unseenOnly} onClick={() => setUnseenOnly((v) => !v)}>
+        <button type="button" class={`buttonSecondary ${styles.unseenToggle}`} aria-pressed={unseenOnly} onClick={() => setUnseenOnly((v) => !v)}>
           Unseen only
         </button>
       </div>

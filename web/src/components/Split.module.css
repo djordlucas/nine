@@ -31,7 +31,7 @@
 }
 
 .top > :first-child:not(.fold) {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
 }
 

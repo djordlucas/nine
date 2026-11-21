@@ -90,7 +90,7 @@ function Activity({ id, isProcess, onRenamed }: { id: string; isProcess: boolean
       <div class={styles.activityMain}>
         {isProcess ? <ProcessChat id={id} /> : <Chat id={id} onRenamed={onRenamed} />}
       </div>
-      <button type="button" class={`button ${styles.sideToggle}`} aria-expanded={showSide} onClick={() => setShowSide((s) => !s)}>
+      <button type="button" class={`buttonSecondary ${styles.sideToggle}`} aria-expanded={showSide} onClick={() => setShowSide((s) => !s)}>
         {showSide ? 'Hide details' : 'Details'}
       </button>
       <aside class={`${styles.activitySide} ${showSide ? '' : styles.sideHidden}`} aria-label="Agent details">

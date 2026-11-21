@@ -137,6 +137,21 @@
   overflow-wrap: anywhere;
 }
 
+/* Facts whose keys are long (commands, ids): stacked, one entry per row, so
+   a long key never squeezes the value into a word per line. */
+.factsStacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.factsStacked dt {
+  overflow-wrap: anywhere;
+}
+
+.factsStacked dd {
+  margin-bottom: var(--space-2);
+  color: var(--text-2);
+}
+
 .section h3 {
   font-size: var(--text-md);
   margin-bottom: var(--space-2);
