@@ -113,7 +113,7 @@ function Questions({ data }: { data: Awaited<ReturnType<typeof loadAttention>> |
                 asked {ago(q.created_at)}, expires {new Date(q.expires_at).toLocaleTimeString()}
               </p>
               <div class={detail.actions}>
-                <a class={`${detail.action} ${detail.primary} ${styles.linkButton}`} href={`/conversations/${q.agent_id}`}>
+                <a class={`${detail.action} ${detail.secondary} ${styles.linkButton}`} href={`/conversations/${q.agent_id}`}>
                   Answer in the conversation
                 </a>
               </div>

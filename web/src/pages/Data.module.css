@@ -349,7 +349,8 @@
 
 .cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  /* Tiles keep a fixed size instead of one stretching across the row. */
+  grid-template-columns: repeat(auto-fill, minmax(200px, 260px));
   gap: var(--space-2);
   margin: 0;
   padding: 0;
@@ -414,7 +415,7 @@
 
 @media (max-width: 767px) {
   .cards {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(150px, 220px));
   }
 
   .sort {
