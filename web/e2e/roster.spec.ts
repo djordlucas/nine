@@ -15,7 +15,7 @@ async function send(page: Page, text: string) {
 
 /** Starts a conversation whose first turn names it after the message. */
 async function newNamed(page: Page, text: string) {
-  await page.getByRole('button', { name: 'New agent' }).click();
+  await page.getByRole('button', { name: 'Run agent' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
   const id = page.url().split('/conversations/')[1];
