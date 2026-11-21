@@ -46,7 +46,7 @@ export function Confirm({ ask, onClose }: { ask: Ask | null; onClose: () => void
           <h2 id="confirm-title">{ask.title}</h2>
           <p id="confirm-message">{ask.message}</p>
           <div class={styles.actions}>
-            <button ref={cancel} type="button" class={styles.cancel} onClick={onClose}>
+            <button ref={cancel} type="button" class="buttonSecondary" onClick={onClose}>
               Cancel
             </button>
             <button

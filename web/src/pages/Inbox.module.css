@@ -103,8 +103,10 @@
   max-width: 360px;
 }
 
+/* Pressed, the toggle is an accent tint rather than a solid fill: it filters,
+   it is not the page's call to action. */
 .unseenToggle[aria-pressed='true'] {
-  background: var(--ink);
-  border-color: var(--ink);
-  color: var(--ink-text);
+  background: color-mix(in srgb, var(--accent) 12%, var(--surface));
+  border-color: var(--accent);
+  color: var(--accent);
 }

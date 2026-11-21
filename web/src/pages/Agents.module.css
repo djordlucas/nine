@@ -4,16 +4,56 @@
   min-height: 32px;
 }
 
-/* A roster row: the agent's name, then its labels (type, state) and details
-   on the line under. */
+/* A roster row: a state dot, the name, attention badges at the right end of
+   the name's line, and the labels (type, state) and details on the line
+   under. */
 .agentRow {
   display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 2px var(--space-2);
+  align-items: center;
   padding: 6px var(--space-2);
   color: inherit;
   font-size: var(--text-sm);
   text-decoration: none;
+}
+
+/* The state as a dot before the name: accent while running, red when
+   failing, muted otherwise. */
+.dot {
+  grid-row: 1 / 3;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.dot[data-state='running'],
+.dot[data-state='active'] {
+  background: var(--accent);
+}
+
+.dot[data-state='failing'] {
+  background: var(--danger);
+}
+
+/* What waits for the operator rides at the right of the name's line — it is
+   the row's signal, not decoration. */
+.attention {
+  grid-column: 3;
+  grid-row: 1;
+  display: inline-flex;
+  gap: 4px;
+}
+
+/* A group label between the processes and the conversations. */
+.groupHead {
+  padding: var(--space-2) var(--space-2) 2px;
+  font-size: var(--text-2xs);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
 }
 
 .rowLine {
@@ -31,11 +71,11 @@
 }
 
 .rowLine:has(> .agentRow[aria-current='page']) {
-  background: var(--ink);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
 }
 
 .agentRow[aria-current='page'] {
-  color: var(--ink-text);
+  color: var(--text);
 }
 
 /* The fold toggle on a parent row: a small chevron that turns down. */
@@ -71,12 +111,14 @@
 }
 
 .agentRow .name {
+  grid-column: 2;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .agentRow .meta {
+  grid-column: 2 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -114,9 +156,11 @@
   min-width: 0;
 }
 
-/* The back-to-list link spans the activity grid, above the chat and panel. */
+/* The back-to-list link spans the activity grid, above the chat and panel;
+   it hugs the left edge instead of stretching across the row. */
 .backRow {
   grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .activitySide {
@@ -177,7 +221,7 @@
   background: var(--surface);
   color: var(--text);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .dialog::backdrop {
@@ -238,20 +282,6 @@
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-2);
-}
-
-.cancel {
-  min-height: var(--touch);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.cancel:hover {
-  background: var(--surface-2);
 }
 
 /* The type filter chips under the list head. */
@@ -324,7 +354,7 @@
 }
 
 .rowLine:has(> .agentRow[aria-current='page']) .rowActions button {
-  color: var(--ink-text);
+  color: var(--text);
 }
 
 /* State badge colors: running/active blue, failing red, the rest muted. */
