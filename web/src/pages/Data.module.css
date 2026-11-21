@@ -227,35 +227,8 @@
   gap: var(--space-2);
 }
 
-.toolAction {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-  min-height: 36px;
-  padding: 0 var(--space-3);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.toolAction:hover {
-  background: var(--surface-2);
-}
-
-.toolAction:disabled {
-  opacity: 0.6;
-  cursor: default;
-}
-
-.toolAction.danger {
-  border-color: var(--danger);
-  color: var(--danger);
-}
+/* Toolbar buttons are the shared .buttonSecondary/.buttonDanger from
+   tokens.css. */
 
 .filters {
   display: flex;

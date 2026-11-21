@@ -628,7 +628,7 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
             ))}
           </div>
           <div class={styles.dialogActions}>
-            <button type="button" class={styles.cancel} onClick={() => setPicking(false)}>
+            <button type="button" class="buttonSecondary" onClick={() => setPicking(false)}>
               Cancel
             </button>
             <button
@@ -667,7 +667,7 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
             }}
           />
           <div class={styles.dialogActions}>
-            <button type="button" class={styles.cancel} onClick={() => setRenaming(null)}>
+            <button type="button" class="buttonSecondary" onClick={() => setRenaming(null)}>
               Cancel
             </button>
             <button type="button" class="button" onClick={() => void submitRename()}>

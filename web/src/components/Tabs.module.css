@@ -1,0 +1,44 @@
+/* The tabbed pages' shared chrome (Builder, Data, System): the page wrapper
+   and the view tab strip, one style for every section. */
+.section {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.views {
+  display: flex;
+  gap: var(--space-1);
+  border-bottom: 1px solid var(--border);
+}
+
+.view {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--touch);
+  padding: 0 var(--space-3);
+  color: var(--text-2);
+  text-decoration: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+/* The selected tab: a soft surface tint with an accent underline. */
+.view[aria-current='page'] {
+  background: var(--surface-2);
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+/* On a phone six views do not fit one row: the tab strip scrolls sideways
+   instead of clipping the last tab. */
+@media (max-width: 767px) {
+  .views {
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+
+  .view {
+    flex-shrink: 0;
+  }
+}

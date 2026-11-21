@@ -36,19 +36,6 @@
   margin-top: var(--space-2);
 }
 
-.cancel {
-  min-height: var(--touch);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--edge);
-  background: var(--surface);
-  cursor: pointer;
-  border-radius: var(--radius);
-}
-
-.cancel:hover {
-  background: var(--surface-2);
-}
-
 .danger {
   background: var(--danger);
   color: #ffffff;
