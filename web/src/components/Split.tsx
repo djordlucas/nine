@@ -56,7 +56,7 @@ const Fold = createContext<{ noun: string; fold: () => void } | null>(null);
 
 function FoldButton({ expanded, label, onClick }: { expanded: boolean; label: string; onClick: () => void }) {
   return (
-    <button type="button" class={`button ${css.fold}`} aria-label={label} title={label} aria-expanded={expanded} onClick={onClick}>
+    <button type="button" class={`buttonGhost ${css.fold}`} aria-label={label} title={label} aria-expanded={expanded} onClick={onClick}>
       {expanded ? '‹' : '›'}
     </button>
   );
