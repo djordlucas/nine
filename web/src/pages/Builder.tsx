@@ -536,10 +536,15 @@ function RolesView({ name }: { name?: string }) {
                 <a href={roleHref(r.name)} class={styles.row} aria-current={r.name === name ? 'page' : undefined}>
                   <span class={styles.nameLine}>
                     <span class={styles.name}>{r.name}</span>
+                    <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
                   </span>
                   <span class={styles.meta}>
-                    <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
-                    {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null, r.description].filter(Boolean).join(' · ')}
+                    {r.leaf && <span class={detail.badge}>leaf</span>}
+                    {r.delegates && <span class={detail.badge}>delegates</span>}
+                    {r.spawns_goals && <span class={detail.badge}>spawns goals</span>}
+                    {r.persists && <span class={detail.badge}>persists</span>}
+                    {r.interactive && <span class={detail.badge}>interactive</span>}
+                    {r.description}
                   </span>
                 </a>
               </li>
@@ -613,8 +618,10 @@ function RoleForm({ name, roles, toolNames, onSaved, onDelete }: { name: string;
       <header class={detail.head}>
         <div class={detail.title}>
           <h2>{isNew ? 'New role' : name}</h2>
-          {existing?.leaf && <span class="muted">delegatable leaf</span>}
-          {dirty && <span class="muted">Unsaved changes</span>}
+          <div class={styles.headBadges}>
+            {existing?.leaf && <span class={detail.badge}>delegatable leaf</span>}
+            {dirty && <span class={styles.badgeWarn}>Unsaved changes</span>}
+          </div>
         </div>
         {!isNew && (
           <div class={detail.actions}>
@@ -646,46 +653,58 @@ function RoleForm({ name, roles, toolNames, onSaved, onDelete }: { name: string;
           <Area id="role-description" class="input" rows={2} max={160} value={description} onInput={(e) => setDescription((e.target as HTMLTextAreaElement).value)} />
         </div>
         <div class={styles.field}>
-          <Toggle on={allTools} onChange={setAllTools}>
-            All tools
-          </Toggle>
-          {!allTools && (
-            <>
-              <label for="role-tools">Tool allowlist (comma-separated)</label>
-              <input
-                id="role-tools"
-                class="input"
-                list="role-tool-names"
-                value={toolsText}
-                onInput={(e) => setToolsText((e.target as HTMLInputElement).value)}
-                placeholder="shell, file_read, file_write"
-              />
-              <datalist id="role-tool-names">
-                {toolNames.map((n) => (
-                  <option key={n} value={n} />
-                ))}
-              </datalist>
-              {unknownTools.length > 0 && (
-                <p class="muted" role="alert">
-                  Unknown tools: {unknownTools.join(', ')}
-                </p>
-              )}
-            </>
-          )}
+          <span class={styles.fieldLabel} id="role-tools-label">
+            Tools
+          </span>
+          <div class={styles.panel} role="group" aria-labelledby="role-tools-label">
+            <Toggle on={allTools} onChange={setAllTools}>
+              All tools
+            </Toggle>
+            {!allTools ? (
+              <>
+                <label for="role-tools">Tool allowlist (comma-separated)</label>
+                <input
+                  id="role-tools"
+                  class="input"
+                  list="role-tool-names"
+                  value={toolsText}
+                  onInput={(e) => setToolsText((e.target as HTMLInputElement).value)}
+                  placeholder="shell, file_read, file_write"
+                />
+                <datalist id="role-tool-names">
+                  {toolNames.map((n) => (
+                    <option key={n} value={n} />
+                  ))}
+                </datalist>
+                {unknownTools.length > 0 && (
+                  <p class="error" role="alert">
+                    Unknown tools: {unknownTools.join(', ')}
+                  </p>
+                )}
+              </>
+            ) : (
+              <p class="muted">Every tool is granted to this role.</p>
+            )}
+          </div>
         </div>
         <div class={styles.field}>
-          <Toggle on={delegates} onChange={setDelegates}>
-            Delegates (may spawn sub-agents)
-          </Toggle>
-          <Toggle on={spawnsGoals} onChange={setSpawnsGoals}>
-            Spawns goals (background pursue sessions)
-          </Toggle>
-          <Toggle on={persists} onChange={setPersists}>
-            Persists (checkpointing session worker)
-          </Toggle>
-          <Toggle on={interactive} onChange={setInteractive}>
-            Interactive (HITL-eligible)
-          </Toggle>
+          <span class={styles.fieldLabel} id="role-caps-label">
+            Capabilities
+          </span>
+          <div class={styles.toggleGrid} role="group" aria-labelledby="role-caps-label">
+            <Toggle on={delegates} onChange={setDelegates}>
+              Delegates (may spawn sub-agents)
+            </Toggle>
+            <Toggle on={spawnsGoals} onChange={setSpawnsGoals}>
+              Spawns goals (background pursue sessions)
+            </Toggle>
+            <Toggle on={persists} onChange={setPersists}>
+              Persists (checkpointing session worker)
+            </Toggle>
+            <Toggle on={interactive} onChange={setInteractive}>
+              Interactive (HITL-eligible)
+            </Toggle>
+          </div>
         </div>
         <div class={detail.actions}>
           <button class={`${detail.action} ${detail.primary}`} type="submit" disabled={busy || !roleName.trim() || (!allTools && toolsText.trim() === '' && !isNew && (existing?.tools ?? []).length === 0)}>

@@ -98,6 +98,49 @@
   gap: var(--space-1);
 }
 
+/* Badges in a detail header: leaf, unsaved changes. */
+.headBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* A warning badge: the form holds unsaved changes. */
+.badgeWarn {
+  padding: 0 6px;
+  border: 1px solid var(--warn);
+  border-radius: var(--radius);
+  color: var(--warn);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+/* A bordered group inside a form, e.g. the role's tool grant. */
+.panel {
+  display: grid;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.panel label {
+  font-size: var(--text-sm);
+}
+
+/* The structural toggles of a role, two columns on a desktop. */
+.toggleGrid {
+  display: grid;
+  gap: var(--space-1) var(--space-3);
+}
+
+@media (min-width: 768px) {
+  .toggleGrid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
 .field > label:first-child {
   font-size: var(--text-sm);
 }
