@@ -196,6 +196,7 @@ type Row = {
   id: string;
   name: string;
   meta: string;
+  age?: string;
   href: string;
   state?: string;
   badge?: string;
@@ -209,13 +210,6 @@ type Row = {
   questions?: number;
   caps?: number;
 };
-
-/** The badge color for a process state or a conversation status. */
-function stateClass(s: string): string {
-  if (s === 'running' || s === 'active') return styles.stRunning;
-  if (s === 'failing') return detail.failing;
-  return styles.stMuted;
-}
 
 type Sub = { id: string; role?: string; task?: string; status?: string };
 
@@ -395,7 +389,15 @@ function Roster({
         type: 'conversation',
         id,
         name: c.name || shortId(id),
-        meta: [c.role, ago(c.updated_at)].filter(Boolean).join(' · '),
+        meta: c.role ?? '',
+        // The listing carries age_seconds (the panel's "last activity"), not a
+        // timestamp; fall back to updated_at when present.
+        age:
+          c.age_seconds !== undefined
+            ? ago(new Date(Date.now() - c.age_seconds * 1000).toISOString())
+            : c.updated_at
+              ? ago(c.updated_at)
+              : undefined,
         href: `/conversations/${encodeURIComponent(id)}`,
         status: c.status,
         planMode: c.plan_mode,
@@ -469,7 +471,8 @@ function Roster({
             <>
               <span>{procs.data.max ? `${running} of ${procs.data.max} running` : `${running} running`}</span>
               <span>
-                {(data ?? []).length} conversations · {procs.data.list.length} processes
+                {(data ?? []).length} conversation{(data ?? []).length === 1 ? '' : 's'} · {procs.data.list.length} process
+                {procs.data.list.length === 1 ? '' : 'es'}
               </span>
             </>
           )
@@ -491,6 +494,11 @@ function Roster({
   // Processes and goals under one label, conversations and sub-agents under
   // another; the list is ordered so each group is one run.
   const groupOf = (r: Row) => (r.type === 'process' || r.type === 'goal' ? 'Processes' : 'Conversations');
+  const groupCounts = visible.reduce((m, r) => {
+    const g = groupOf(r);
+    m.set(g, (m.get(g) ?? 0) + 1);
+    return m;
+  }, new Map<string, number>());
 
   return (
     <nav class={split.list} aria-label="Agents">
@@ -521,35 +529,39 @@ function Roster({
         <ul>
           {visible.map((r, i) => (
             <Fragment key={`${r.type}:${r.id}`}>
-              {groupOf(r) !== (i > 0 ? groupOf(visible[i - 1]) : null) && <li class={styles.groupHead}>{groupOf(r)}</li>}
+              {groupOf(r) !== (i > 0 ? groupOf(visible[i - 1]) : null) && (
+                <li class={styles.groupHead}>
+                  {groupOf(r)} · {groupCounts.get(groupOf(r))}
+                </li>
+              )}
               <li>
                 <div class={styles.rowLine}>
                   <a
                     href={r.href}
-                    class={styles.agentRow}
+                    class={`${styles.agentRow}${r.depth ? ` ${styles.indented}` : ''}`}
                     aria-current={r.current ? 'page' : undefined}
-                    style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
                   >
-                    <span class={styles.dot} data-state={r.state ?? r.status ?? ''} aria-hidden="true" />
-                    <span class={styles.name}>{r.name}</span>
-                    {(!!r.questions || !!r.caps) && (
-                      <span class={styles.attention}>
-                        {!!r.questions && (
-                          <span class={`${detail.badge} ${detail.failing}`} title="Questions waiting for an answer">
-                            ?{r.questions}
-                          </span>
-                        )}
-                        {!!r.caps && (
-                          <span class={`${detail.badge} ${detail.failing}`} title="Capability requests waiting">
-                            cap {r.caps}
-                          </span>
-                        )}
-                      </span>
-                    )}
+                    <span class={styles.nameLine}>
+                      <span class={styles.dot} data-state={r.state ?? r.status ?? ''} title={r.state ?? r.status} aria-hidden="true" />
+                      <span class={styles.name}>{r.name}</span>
+                      {(!!r.questions || !!r.caps) && (
+                        <span class={styles.attention}>
+                          {!!r.questions && (
+                            <span class={`${detail.badge} ${detail.failing}`} title="Questions waiting for an answer">
+                              ?{r.questions}
+                            </span>
+                          )}
+                          {!!r.caps && (
+                            <span class={`${detail.badge} ${detail.failing}`} title="Capability requests waiting">
+                              cap {r.caps}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                      {r.age && <span class={styles.age}>{r.age}</span>}
+                    </span>
                     <span class={styles.meta}>
                       {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
-                      {r.state && <span class={`${detail.badge} ${stateClass(r.state)}`}>{r.state}</span>}
-                      {r.type === 'conversation' && r.status && <span class={`${detail.badge} ${stateClass(r.status)}`}>{r.status}</span>}
                       {r.planMode && (
                         <span class={detail.badge} title="Plan mode">
                           plan
