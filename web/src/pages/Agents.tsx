@@ -1,3 +1,4 @@
+import { Fragment } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
 import { api, errorMessage, get } from '../api/client';
@@ -10,6 +11,7 @@ import { actionsFor, byAttention, processState, type Process } from '../processe
 import { attentionEvents, loadAttention } from '../inbox';
 import { copyText } from '../clipboard';
 import { ask } from '../components/Confirm';
+import { Blank } from '../components/Blank';
 import { Chat } from './Chat';
 import { ListHead, Split } from '../components/Split';
 import { Icon } from '../components/Icon';
@@ -52,14 +54,19 @@ export function Agents() {
   const isProcess = path.startsWith('/processes');
   // Bumped by a rename, so the list reads the new name.
   const [renamed, setRenamed] = useState(0);
+  // The New agent pop-up is shared: the list's button and the empty pane's
+  // call to action both open it.
+  const [picking, setPicking] = useState(false);
   return (
     <Split name="agents" noun="agents" open={!!id} foldable={false}>
-      <Roster current={id} currentIsProcess={isProcess} reloadKey={renamed} />
+      <Roster current={id} currentIsProcess={isProcess} reloadKey={renamed} picking={picking} setPicking={setPicking} />
       <section class={split.pane} aria-label="Activity">
         {id ? (
           <Activity key={`${isProcess ? 'p' : 'c'}:${id}`} id={id} isProcess={isProcess} onRenamed={() => setRenamed((n) => n + 1)} />
         ) : (
-          <p class="empty">Choose an agent, or start a new one.</p>
+          <Blank title="Agents" action={{ label: 'Start an agent', onClick: () => setPicking(true) }}>
+            Every conversation, process and goal this runtime runs, in one list. Choose one to open its activity.
+          </Blank>
         )}
       </section>
     </Split>
@@ -242,7 +249,19 @@ function useSubAgents(board: { claimed_by?: string; posted_by?: string; source?:
   }, [board, events]);
 }
 
-function Roster({ current, currentIsProcess, reloadKey }: { current?: string; currentIsProcess: boolean; reloadKey: number }) {
+function Roster({
+  current,
+  currentIsProcess,
+  reloadKey,
+  picking,
+  setPicking,
+}: {
+  current?: string;
+  currentIsProcess: boolean;
+  reloadKey: number;
+  picking: boolean;
+  setPicking: (v: boolean) => void;
+}) {
   const { route } = useLocation();
   const [created, setCreated] = useState(0);
   const [busy, setBusy] = useState(false);
@@ -250,7 +269,6 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
   // The role a new agent runs as (adr/orchestrator-board.md §2.5); default
   // orchestrator. Chosen in the pop-up the New agent button opens.
   const [role, setRole] = useState('orchestrator');
-  const [picking, setPicking] = useState(false);
   const picker = useRef<HTMLDialogElement>(null);
   // Row-level tools: a text filter, type chips, and per-row actions.
   const [filter, setFilter] = useState('');
@@ -470,6 +488,10 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
     ['goal', 'Goals'],
   ];
 
+  // Processes and goals under one label, conversations and sub-agents under
+  // another; the list is ordered so each group is one run.
+  const groupOf = (r: Row) => (r.type === 'process' || r.type === 'goal' ? 'Processes' : 'Conversations');
+
   return (
     <nav class={split.list} aria-label="Agents">
       <ListHead>
@@ -497,43 +519,50 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
       {rows.length > 0 && visible.length === 0 && <p class="empty">No agent matches.</p>}
       {visible.length > 0 && (
         <ul>
-          {visible.map((r) => (
-            <li key={`${r.type}:${r.id}`}>
-              <div class={styles.rowLine}>
-                <a
-                  href={r.href}
-                  class={styles.agentRow}
-                  aria-current={r.current ? 'page' : undefined}
-                  style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
-                >
-                  <span class={styles.name}>{r.name}</span>
-                  <span class={styles.meta}>
-                    {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
-                    {r.state && <span class={`${detail.badge} ${stateClass(r.state)}`}>{r.state}</span>}
-                    {r.type === 'conversation' && r.status && <span class={`${detail.badge} ${stateClass(r.status)}`}>{r.status}</span>}
-                    {r.planMode && (
-                      <span class={detail.badge} title="Plan mode">
-                        plan
+          {visible.map((r, i) => (
+            <Fragment key={`${r.type}:${r.id}`}>
+              {groupOf(r) !== (i > 0 ? groupOf(visible[i - 1]) : null) && <li class={styles.groupHead}>{groupOf(r)}</li>}
+              <li>
+                <div class={styles.rowLine}>
+                  <a
+                    href={r.href}
+                    class={styles.agentRow}
+                    aria-current={r.current ? 'page' : undefined}
+                    style={r.depth ? { paddingLeft: `calc(var(--space-2) + ${r.depth} * var(--space-4))` } : undefined}
+                  >
+                    <span class={styles.dot} data-state={r.state ?? r.status ?? ''} aria-hidden="true" />
+                    <span class={styles.name}>{r.name}</span>
+                    {(!!r.questions || !!r.caps) && (
+                      <span class={styles.attention}>
+                        {!!r.questions && (
+                          <span class={`${detail.badge} ${detail.failing}`} title="Questions waiting for an answer">
+                            ?{r.questions}
+                          </span>
+                        )}
+                        {!!r.caps && (
+                          <span class={`${detail.badge} ${detail.failing}`} title="Capability requests waiting">
+                            cap {r.caps}
+                          </span>
+                        )}
                       </span>
                     )}
-                    {r.protected && (
-                      <span class={detail.badge} title="Protected from deletion">
-                        pinned
-                      </span>
-                    )}
-                    {!!r.questions && (
-                      <span class={`${detail.badge} ${detail.failing}`} title="Questions waiting for an answer">
-                        ?{r.questions}
-                      </span>
-                    )}
-                    {!!r.caps && (
-                      <span class={`${detail.badge} ${detail.failing}`} title="Capability requests waiting">
-                        cap {r.caps}
-                      </span>
-                    )}
-                    {r.meta}
-                  </span>
-                </a>
+                    <span class={styles.meta}>
+                      {r.type !== 'conversation' && <span class={detail.badge}>{r.badge ?? r.type}</span>}
+                      {r.state && <span class={`${detail.badge} ${stateClass(r.state)}`}>{r.state}</span>}
+                      {r.type === 'conversation' && r.status && <span class={`${detail.badge} ${stateClass(r.status)}`}>{r.status}</span>}
+                      {r.planMode && (
+                        <span class={detail.badge} title="Plan mode">
+                          plan
+                        </span>
+                      )}
+                      {r.protected && (
+                        <span class={detail.badge} title="Protected from deletion">
+                          pinned
+                        </span>
+                      )}
+                      {r.meta}
+                    </span>
+                  </a>
                 <span class={styles.rowActions}>
                   {r.type === 'conversation' && (
                     <>
@@ -595,7 +624,8 @@ function Roster({ current, currentIsProcess, reloadKey }: { current?: string; cu
                   </button>
                 )}
               </div>
-            </li>
+              </li>
+            </Fragment>
           ))}
         </ul>
       )}
