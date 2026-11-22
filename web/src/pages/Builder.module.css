@@ -4,6 +4,94 @@
   gap: var(--space-2);
 }
 
+/* Short fields side by side on a desktop. */
+@media (min-width: 768px) {
+  .formRow {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-3);
+  }
+}
+
+/* A builder list row, shaped like the roster's: the name's line (status dot
+   for agents, name, age at the right) and a muted meta line under it. */
+.row {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px var(--space-2);
+  border-radius: var(--radius);
+  color: inherit;
+  font-size: var(--text-sm);
+  text-decoration: none;
+}
+
+.row:hover {
+  background: var(--surface-2);
+}
+
+.row[aria-current='page'] {
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
+  color: var(--text);
+}
+
+.nameLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* The agent's status as a dot: accent active, warn staged, muted the rest. */
+.dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-2);
+}
+
+.dot[data-state='active'] {
+  background: var(--accent);
+}
+
+.dot[data-state='staged'] {
+  background: var(--warn);
+}
+
+.age {
+  flex: none;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+@media (max-width: 767px) {
+  .row {
+    min-height: var(--touch);
+    justify-content: center;
+  }
+}
+
 .field {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

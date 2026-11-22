@@ -16,7 +16,6 @@ import detail from '../components/Detail.module.css';
 import { param } from './Processes';
 import { PluginsView, ToolsView } from './Tools';
 import tabs from '../components/Tabs.module.css';
-import tools from './Tools.module.css';
 import styles from './Builder.module.css';
 
 type Agent = Schemas['Agent'];
@@ -222,11 +221,15 @@ function AgentsView({ id }: { id?: string }) {
           <ul>
             {shown.map((a) => (
               <li key={a.id}>
-                <a href={agentHref(a.id)} class={split.row} aria-current={a.id === id ? 'page' : undefined}>
-                  <span className={`${detail.badge} ${a.status === 'staged' ? detail.failing : ''}`}>{a.status}</span>
-                  <span class={split.name}>{a.definition.name}</span>
-                  <span class={split.meta}>
-                    {[a.definition.role, `${(a.definition.skills ?? []).length} skills`, `v${a.version}`, ago(a.updated_at)].filter(Boolean).join(' · ')}
+                <a href={agentHref(a.id)} class={styles.row} aria-current={a.id === id ? 'page' : undefined}>
+                  <span class={styles.nameLine}>
+                    <span class={styles.dot} data-state={a.status} title={a.status} aria-hidden="true" />
+                    <span class={styles.name}>{a.definition.name}</span>
+                    {a.updated_at && <span class={styles.age}>{ago(a.updated_at)}</span>}
+                  </span>
+                  <span class={styles.meta}>
+                    {a.status === 'staged' && <span className={`${detail.badge} ${detail.failing}`}>staged</span>}
+                    {[a.definition.role, `${(a.definition.skills ?? []).length} skills`, `v${a.version}`].filter(Boolean).join(' · ')}
                   </span>
                 </a>
               </li>
@@ -432,20 +435,22 @@ function AgentForm({
           void save();
         }}
       >
-        <div class={styles.field}>
-          <label for="agent-name">Name</label>
-          <input id="agent-name" class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="researcher" required />
-        </div>
-        <div class={styles.field}>
-          <label for="agent-role">Role</label>
-          <select id="agent-role" class="input" value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
-            <option value="">default role at run time</option>
-            {roles.map((r) => (
-              <option key={r.name} value={r.name}>
-                {r.name}
-              </option>
-            ))}
-          </select>
+        <div class={styles.formRow}>
+          <div class={styles.field}>
+            <label for="agent-name">Name</label>
+            <input id="agent-name" class="input" value={name} onInput={(e) => setName((e.target as HTMLInputElement).value)} placeholder="researcher" required />
+          </div>
+          <div class={styles.field}>
+            <label for="agent-role">Role</label>
+            <select id="agent-role" class="input" value={role} onChange={(e) => setRole((e.target as HTMLSelectElement).value)}>
+              <option value="">default role at run time</option>
+              {roles.map((r) => (
+                <option key={r.name} value={r.name}>
+                  {r.name}
+                </option>
+              ))}
+            </select>
+          </div>
         </div>
         <div class={styles.field}>
           <span class={styles.fieldLabel} id="agent-skills-label">
@@ -528,10 +533,12 @@ function RolesView({ name }: { name?: string }) {
           <ul>
             {shown.map((r) => (
               <li key={r.name}>
-                <a href={roleHref(r.name)} class={split.row} aria-current={r.name === name ? 'page' : undefined}>
-                  <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
-                  <span class={split.name}>{r.name}</span>
-                  <span class={split.meta}>
+                <a href={roleHref(r.name)} class={styles.row} aria-current={r.name === name ? 'page' : undefined}>
+                  <span class={styles.nameLine}>
+                    <span class={styles.name}>{r.name}</span>
+                  </span>
+                  <span class={styles.meta}>
+                    <span class={detail.badge}>{r.all_tools ? 'all tools' : `${r.tools?.length ?? 0} tools`}</span>
                     {[r.leaf ? 'leaf' : null, r.delegates ? 'delegates' : null, r.description].filter(Boolean).join(' · ')}
                   </span>
                 </a>
@@ -732,10 +739,14 @@ function SkillsView({ name }: { name?: string }) {
           <ul>
             {shown.map((s) => (
               <li key={s.name}>
-                <a href={skillHref(s.name)} class={split.row} aria-current={s.name === name ? 'page' : undefined}>
-                  <span class={detail.badge}>{s.source}</span>
-                  <span class={split.name}>{s.name}</span>
-                  {s.description && <span class={split.meta}>{s.description}</span>}
+                <a href={skillHref(s.name)} class={styles.row} aria-current={s.name === name ? 'page' : undefined}>
+                  <span class={styles.nameLine}>
+                    <span class={styles.name}>{s.name}</span>
+                  </span>
+                  <span class={styles.meta}>
+                    <span class={detail.badge}>{s.source}</span>
+                    {s.description}
+                  </span>
                 </a>
               </li>
             ))}
@@ -927,12 +938,12 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
           <ul>
             {shown.map((e: MemoryEntry) => (
               <li key={e.key}>
-                <a href={dataHref(e.key)} class={split.row} aria-current={e.key === memoryKey ? 'page' : undefined}>
-                  <span class={`${split.name} ${tools.wide}`}>{e.key}</span>
-                  <span class={split.meta}>
-                    {bytes(e.bytes)}
-                    {e.updated_at ? ` · ${ago(e.updated_at)}` : ''}
+                <a href={dataHref(e.key)} class={styles.row} aria-current={e.key === memoryKey ? 'page' : undefined}>
+                  <span class={styles.nameLine}>
+                    <span class={styles.name}>{e.key}</span>
+                    {e.updated_at && <span class={styles.age}>{ago(e.updated_at)}</span>}
                   </span>
+                  <span class={styles.meta}>{bytes(e.bytes)}</span>
                 </a>
               </li>
             ))}
