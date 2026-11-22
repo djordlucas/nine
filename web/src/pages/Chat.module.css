@@ -124,9 +124,9 @@
 .bubble {
   min-width: 0;
   padding: var(--space-2) var(--space-3);
-  border: 1px solid var(--accent);
+  border: 1px solid transparent;
   border-radius: var(--radius-lg);
-  background: var(--surface);
+  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -822,7 +822,7 @@
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
-  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2);
+  box-shadow: var(--shadow-md);
 }
 
 .toBottom svg {
@@ -880,7 +880,7 @@
     background: var(--surface);
     border: 1px solid var(--edge);
     border-radius: var(--radius-lg);
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.2);
+    box-shadow: var(--shadow-lg);
   }
 
   .moreList button {
@@ -921,7 +921,7 @@
     max-height: 70dvh;
     overflow-y: auto;
     margin: var(--space-2) var(--space-4) 0 0;
-    box-shadow: 0 8px 24px rgb(0 0 0 / 0.18);
+    box-shadow: var(--shadow-lg);
   }
 
   .toBottom {

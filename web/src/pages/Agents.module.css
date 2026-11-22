@@ -31,11 +31,11 @@
 }
 
 .rowLine:has(> .agentRow[aria-current='page']) {
-  background: var(--ink);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
 }
 
 .agentRow[aria-current='page'] {
-  color: var(--ink-text);
+  color: var(--text);
 }
 
 /* The fold toggle on a parent row: a small chevron that turns down. */
@@ -177,7 +177,7 @@
   background: var(--surface);
   color: var(--text);
   border-radius: var(--radius-lg);
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.08);
+  box-shadow: var(--shadow-sm);
 }
 
 .dialog::backdrop {
@@ -324,7 +324,7 @@
 }
 
 .rowLine:has(> .agentRow[aria-current='page']) .rowActions button {
-  color: var(--ink-text);
+  color: var(--text);
 }
 
 /* State badge colors: running/active blue, failing red, the rest muted. */
