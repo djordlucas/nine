@@ -4,24 +4,29 @@
   min-height: 32px;
 }
 
-/* A roster row: a state dot, the name, attention badges at the right end of
-   the name's line, and the labels (type, state) and details on the line
-   under. */
+/* A roster row is two quiet lines: the name's line (state dot, name, then
+   what waits for the operator and the last activity at the right), and a
+   muted meta line under it (type, plan, pinned, role/tool). */
 .agentRow {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 2px var(--space-2);
-  align-items: center;
-  padding: 6px var(--space-2);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px var(--space-2);
   color: inherit;
   font-size: var(--text-sm);
   text-decoration: none;
 }
 
+.nameLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
 /* The state as a dot before the name: accent while running, red when
-   failing, muted otherwise. */
+   failing, muted otherwise; running pulses gently. */
 .dot {
-  grid-row: 1 / 3;
+  flex: none;
   width: 8px;
   height: 8px;
   border-radius: 50%;
@@ -37,16 +42,51 @@
   background: var(--danger);
 }
 
+@media (prefers-reduced-motion: no-preference) {
+  .dot[data-state='running'],
+  .dot[data-state='active'] {
+    animation: dotPulse 2.2s ease-in-out infinite;
+  }
+}
+
+@keyframes dotPulse {
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.agentRow .name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* What waits for the operator rides at the right of the name's line — it is
    the row's signal, not decoration. */
 .attention {
-  grid-column: 3;
-  grid-row: 1;
   display: inline-flex;
+  flex: none;
   gap: 4px;
 }
 
-/* A group label between the processes and the conversations. */
+/* The last activity at the far right, tabular so ages align. */
+.age {
+  flex: none;
+  color: var(--text-2);
+  font-size: var(--text-2xs);
+  font-variant-numeric: tabular-nums;
+}
+
+/* A sub-agent's row is indented under a guide line. */
+.indented {
+  padding-left: calc(var(--space-2) + var(--space-4));
+  box-shadow: inset 2px 0 0 var(--border);
+}
+
+/* A group label between the processes and the conversations, with its
+   count. */
 .groupHead {
   padding: var(--space-2) var(--space-2) 2px;
   font-size: var(--text-2xs);
@@ -110,15 +150,7 @@
   color: var(--ink-text);
 }
 
-.agentRow .name {
-  grid-column: 2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .agentRow .meta {
-  grid-column: 2 / -1;
   display: flex;
   flex-wrap: wrap;
   align-items: center;
@@ -138,7 +170,7 @@
 @media (max-width: 767px) {
   .agentRow {
     min-height: var(--touch);
-    align-content: center;
+    justify-content: center;
   }
 }
 
@@ -355,16 +387,6 @@
 
 .rowLine:has(> .agentRow[aria-current='page']) .rowActions button {
   color: var(--text);
-}
-
-/* State badge colors: running/active blue, failing red, the rest muted. */
-.stRunning {
-  border-color: #2a6dd6;
-  color: #7db4ff;
-}
-
-.stMuted {
-  color: var(--text-2);
 }
 
 /* Plan-mode badge at the top of the details panel. */
