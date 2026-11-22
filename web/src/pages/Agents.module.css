@@ -114,9 +114,11 @@
   min-width: 0;
 }
 
-/* The back-to-list link spans the activity grid, above the chat and panel. */
+/* The back-to-list link spans the activity grid, above the chat and panel;
+   it hugs the left edge instead of stretching across the row. */
 .backRow {
   grid-column: 1 / -1;
+  justify-self: start;
 }
 
 .activitySide {
@@ -238,20 +240,6 @@
   justify-content: flex-end;
   gap: var(--space-2);
   margin-top: var(--space-2);
-}
-
-.cancel {
-  min-height: var(--touch);
-  padding: 0 var(--space-4);
-  border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--surface);
-  color: var(--text);
-  cursor: pointer;
-}
-
-.cancel:hover {
-  background: var(--surface-2);
 }
 
 /* The type filter chips under the list head. */

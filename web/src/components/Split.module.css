@@ -2,7 +2,7 @@
    in its place. Every section with a list shares it (Split.tsx). */
 .split {
   display: grid;
-  grid-template-columns: 240px minmax(0, 1fr);
+  grid-template-columns: 300px minmax(0, 1fr);
   gap: var(--space-4);
   align-items: start;
 }
@@ -31,7 +31,7 @@
 }
 
 .top > :first-child:not(.fold) {
-  flex: 1;
+  flex: 1 1 160px;
   min-width: 0;
 }
 

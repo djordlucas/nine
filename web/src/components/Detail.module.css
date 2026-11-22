@@ -53,10 +53,11 @@
   gap: var(--space-2);
 }
 
-/* An action: the filled button of the rest of the UI (the New conversation
-   button's kind), 32px tall, with its hard shadow and press. An icon action
-   is a square holding only its icon, named by its label and tooltip. A
-   destructive one is red; a secondary one (Cancel) is light with a dark edge. */
+/* An action is ghost by default: bare until hovered, 32px tall, with a
+   press. Only the primary call to action is filled; a secondary one is a
+   field with an edge (Cancel); a destructive one is outlined red and fills
+   on hover. An icon action is a square holding only its icon, named by its
+   label and tooltip. */
 .action {
   display: inline-flex;
   align-items: center;
@@ -64,17 +65,23 @@
   gap: var(--space-2);
   min-height: 32px;
   padding: 0 var(--space-3);
-  border: 1px solid var(--ink);
+  border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--ink);
-  color: var(--ink-text);
+  background: none;
+  color: var(--text-2);
   font-size: var(--text-sm);
   font-weight: 600;
   text-decoration: none;
   cursor: pointer;
 }
 
+.action:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
 .action:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
 .action:disabled {
@@ -82,19 +89,22 @@
   cursor: default;
 }
 
-.action:focus-visible {
-  outline-color: var(--ink-text);
-  outline-offset: -4px;
-}
-
 .iconAction {
   width: 32px;
   padding: 0;
 }
 
-/* Kept for the markup that still names it; every action is filled now. */
+/* The one solid action in a row: the filled button of the rest of the UI. */
 .primary {
-  font-weight: 600;
+  border-color: var(--ink);
+  background: var(--ink);
+  color: var(--ink-text);
+}
+
+.primary:hover:not(:disabled) {
+  background: var(--ink);
+  color: var(--ink-text);
+  filter: brightness(1.06);
 }
 
 .secondary {
@@ -103,13 +113,18 @@
   color: var(--text);
 }
 
-.secondary:focus-visible {
-  outline-color: var(--focus);
-  outline-offset: -2px;
+.secondary:hover:not(:disabled) {
+  background: var(--surface-2);
+  color: var(--text);
 }
 
 .danger {
   border-color: var(--danger);
+  background: none;
+  color: var(--danger);
+}
+
+.danger:hover:not(:disabled) {
   background: var(--danger);
   color: #ffffff;
 }
@@ -135,6 +150,21 @@
 .facts dd {
   margin: 0;
   overflow-wrap: anywhere;
+}
+
+/* Facts whose keys are long (commands, ids): stacked, one entry per row, so
+   a long key never squeezes the value into a word per line. */
+.factsStacked {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.factsStacked dt {
+  overflow-wrap: anywhere;
+}
+
+.factsStacked dd {
+  margin-bottom: var(--space-2);
+  color: var(--text-2);
 }
 
 .section h3 {

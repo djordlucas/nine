@@ -13,6 +13,7 @@ import { ListHead, Split } from '../components/Split';
 import split from '../components/Split.module.css';
 import detail from '../components/Detail.module.css';
 import { param } from './Processes';
+import tabs from '../components/Tabs.module.css';
 import tools from './Tools.module.css';
 import styles from './Data.module.css';
 import { Icon } from '../components/Icon';
@@ -40,10 +41,10 @@ export function Data() {
   const { params } = useRoute();
   const view = views.find((v) => path === v.path || path.startsWith(v.path + '/'))?.path ?? '/data/files';
   return (
-    <div class={tools.section}>
-      <nav class={tools.views} aria-label="Data views">
+    <div class={tabs.section}>
+      <nav class={tabs.views} aria-label="Data views">
         {views.map((v) => (
-          <a key={v.path} href={v.path} class={tools.view} aria-current={v.path === view ? 'page' : undefined}>
+          <a key={v.path} href={v.path} class={tabs.view} aria-current={v.path === view ? 'page' : undefined}>
             {v.label}
           </a>
         ))}
@@ -186,11 +187,11 @@ function Files({ dir, file }: { dir: string; file?: string }) {
           ))}
         </ol>
         <div class={styles.actions}>
-          <button type="button" class={styles.toolAction} disabled={busy} onClick={() => void newFile()}>
+          <button type="button" class="buttonSecondary" disabled={busy} onClick={() => void newFile()}>
             <Icon name="plus" size={16} />
             New file
           </button>
-          <label class={`${styles.toolAction} ${styles.upload}`}>
+          <label class={`buttonSecondary ${styles.upload}`}>
             <Icon name="upload" size={16} />
             Upload
             <input
@@ -205,7 +206,7 @@ function Files({ dir, file }: { dir: string; file?: string }) {
             />
           </label>
           {dir !== '' && data?.entries.length === 0 && (
-            <button type="button" class={`${styles.toolAction} ${styles.danger}`} disabled={busy} onClick={() => void removeDir(dir)}>
+            <button type="button" class="buttonDanger" disabled={busy} onClick={() => void removeDir(dir)}>
               <Icon name="trash" size={16} />
               Delete directory
             </button>
