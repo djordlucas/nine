@@ -229,8 +229,13 @@ samp {
 }
 
 /* The primary button is ink: near-black on a light page, near-white on a
-   dark one. The accent is for links, active states and focus. */
+   dark one. The accent is for links, active states and focus. inline-flex so
+   an <a> styled as a button renders exactly like a <button>. */
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   min-height: var(--touch);
   padding: 0 var(--space-4);
   border: 1px solid transparent;
@@ -238,7 +243,14 @@ samp {
   background: var(--ink);
   color: var(--ink-text);
   font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
+}
+
+/* The compact button of a list's head row (Run agent, New agent): the
+   height of the filter beside it, on a phone too. */
+.buttonCompact {
+  min-height: 32px;
 }
 
 .button:hover:not(:disabled) {

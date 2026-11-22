@@ -1,9 +1,5 @@
 /* The list and the pane share the sections' layout (components/Split). */
 
-.new {
-  min-height: 32px;
-}
-
 /* A roster row is two quiet lines: the name's line (state dot, name, then
    what waits for the operator and the last activity at the right), and a
    muted meta line under it (type, plan, pinned, role/tool). */

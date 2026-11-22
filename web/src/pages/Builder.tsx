@@ -187,7 +187,7 @@ function AgentsView({ id }: { id?: string }) {
       <nav class={split.list} aria-label="Agents">
         <ListHead>
           <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-          <a class="button" href={agentHref('new')}>
+          <a class="button buttonCompact" href={agentHref('new')}>
             New agent
           </a>
           <input
@@ -517,7 +517,7 @@ function RolesView({ name }: { name?: string }) {
       <nav class={split.list} aria-label="Roles">
         <ListHead>
           <input class="input" type="search" aria-label="Filter roles" placeholder="Filter roles" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-          <a class="button" href={roleHref('new')}>
+          <a class="button buttonCompact" href={roleHref('new')}>
             New role
           </a>
           {data && (
@@ -742,7 +742,7 @@ function SkillsView({ name }: { name?: string }) {
       <nav class={split.list} aria-label="Skills">
         <ListHead>
           <input class="input" type="search" aria-label="Filter skills" placeholder="Filter skills" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-          <a class="button" href={skillHref('new')}>
+          <a class="button buttonCompact" href={skillHref('new')}>
             New skill
           </a>
           {data && (
@@ -941,7 +941,7 @@ function DataView({ memoryKey }: { memoryKey?: string }) {
       <nav class={split.list} aria-label="Memory keys">
         <ListHead>
           <input class="input" type="search" aria-label="Filter memory keys" placeholder="Filter keys" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-          <a class="button" href="/builder/data/new">
+          <a class="button buttonCompact" href="/builder/data/new">
             New key
           </a>
           {data && (
