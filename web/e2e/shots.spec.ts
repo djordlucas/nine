@@ -6,7 +6,9 @@ import { expect, signIn, test } from './fixtures';
 // regression is visible at a glance. Not a pixel comparison — CI just reruns
 // it; the PNGs are for review.
 
-const pages = ['/conversations', '/builder', '/inbox', '/data/files', '/journal', '/system'];
+// /builder/roles/executor opens the role form (a builtin seed role, so the
+// detail pane has content on both layouts).
+const pages = ['/conversations', '/builder', '/builder/roles', '/builder/roles/executor', '/inbox', '/data/files', '/journal', '/system'];
 
 const slug = (path: string) => path.replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'root';
 
