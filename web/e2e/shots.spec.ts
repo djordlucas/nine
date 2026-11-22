@@ -15,7 +15,7 @@ test('visual record of every section, both themes', async ({ page }) => {
   await signIn(page);
   // A conversation with a turn, so the chat page has content to show.
   await page.goto('/conversations');
-  await page.getByRole('button', { name: 'New agent' }).click();
+  await page.getByRole('button', { name: 'Run agent' }).click();
   await page.getByRole('dialog').getByRole('button', { name: 'Start' }).click();
   await expect(page).toHaveURL(/\/conversations\/[^/]+$/);
   const box = page.getByRole('textbox', { name: 'Message' });

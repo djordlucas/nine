@@ -54,7 +54,7 @@ export function Agents() {
   const isProcess = path.startsWith('/processes');
   // Bumped by a rename, so the list reads the new name.
   const [renamed, setRenamed] = useState(0);
-  // The New agent pop-up is shared: the list's button and the empty pane's
+  // The Run agent pop-up is shared: the list's button and the empty pane's
   // call to action both open it.
   const [picking, setPicking] = useState(false);
   return (
@@ -267,7 +267,7 @@ function Roster({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The role a new agent runs as (adr/orchestrator-board.md §2.5); default
-  // orchestrator. Chosen in the pop-up the New agent button opens.
+  // orchestrator. Chosen in the pop-up the Run agent button opens.
   const [role, setRole] = useState('orchestrator');
   const picker = useRef<HTMLDialogElement>(null);
   // Row-level tools: a text filter, type chips, and per-row actions.
@@ -497,7 +497,7 @@ function Roster({
       <ListHead>
         <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
         <button type="button" class={`button ${styles.new}`} onClick={() => setPicking(true)} disabled={busy}>
-          New agent
+          Run agent
         </button>
       </ListHead>
       <div class={styles.chips} role="group" aria-label="Filter by type">
@@ -640,8 +640,8 @@ function Roster({
         }}
       >
         <div class={styles.dialogBox}>
-          <h2 id="new-agent-title">New agent</h2>
-          <p class="muted">Pick the role the new agent runs as.</p>
+          <h2 id="new-agent-title">Run agent</h2>
+          <p class="muted">Pick the role the agent runs as.</p>
           <div class={styles.roles} role="radiogroup" aria-label="Role">
             {(roles ?? [{ name: 'orchestrator' }]).map((r) => (
               <button
