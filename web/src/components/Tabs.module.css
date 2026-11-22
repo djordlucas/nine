@@ -1,39 +1,51 @@
 /* The tabbed pages' shared chrome (Builder, Data, System): the page wrapper
-   and the view tab strip, one style for every section. */
+   and the view tab strip, one style for every section. The strip is a
+   segmented control: a quiet track, the selected view a raised pill. */
 .section {
   display: grid;
   gap: var(--space-4);
 }
 
 .views {
-  display: flex;
-  gap: var(--space-1);
-  border-bottom: 1px solid var(--border);
+  display: inline-flex;
+  gap: 2px;
+  padding: 3px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: calc(var(--radius) + 2px);
+  max-width: 100%;
 }
 
 .view {
   display: inline-flex;
   align-items: center;
-  min-height: var(--touch);
+  min-height: 32px;
   padding: 0 var(--space-3);
+  border-radius: var(--radius);
   color: var(--text-2);
+  font-size: var(--text-sm);
+  font-weight: 500;
   text-decoration: none;
-  border-bottom: 2px solid transparent;
-  margin-bottom: -1px;
+  white-space: nowrap;
 }
 
-/* The selected tab: a soft surface tint with an accent underline. */
+.view:hover {
+  color: var(--text);
+}
+
+/* The selected view: a raised pill on the track. */
 .view[aria-current='page'] {
-  background: var(--surface-2);
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-  border-radius: var(--radius) var(--radius) 0 0;
+  background: var(--surface);
+  color: var(--text);
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
 }
 
 /* On a phone six views do not fit one row: the tab strip scrolls sideways
    instead of clipping the last tab. */
 @media (max-width: 767px) {
   .views {
+    display: flex;
     overflow-x: auto;
     scrollbar-width: none;
   }

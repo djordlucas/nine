@@ -125,8 +125,8 @@
   min-width: 0;
   padding: var(--space-2) var(--space-3);
   border: 1px solid transparent;
-  border-radius: var(--radius-lg);
-  background: color-mix(in srgb, var(--accent) 8%, var(--surface));
+  border-radius: var(--radius-lg) var(--radius-lg) 6px var(--radius-lg);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface));
   color: var(--text);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
@@ -168,9 +168,10 @@
   max-height: 360px;
   overflow: auto;
   background: var(--surface-2);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   font-family: var(--mono);
-  font-size: 13px;
+  font-size: 12.5px;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -219,7 +220,7 @@
   flex: 1;
   min-width: 0;
   padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
 }
@@ -236,7 +237,7 @@
   background: var(--surface);
   color: var(--text);
   cursor: pointer;
-  border-radius: var(--radius);
+  border-radius: 6px;
 }
 
 
@@ -281,7 +282,7 @@
   font-weight: 700;
   letter-spacing: 0.02em;
   cursor: pointer;
-  border-radius: var(--radius);
+  border-radius: 6px;
 }
 
 
@@ -322,9 +323,9 @@
   min-width: 0;
   max-width: 100%;
   padding: 0 var(--space-3);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
 }
 
 .toolBox[open] {
@@ -365,10 +366,9 @@
 
 .wfStatus {
   flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--surface);
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
   color: var(--text-2);
   font-size: 11px;
   line-height: 18px;
@@ -377,17 +377,17 @@
 }
 
 .wfStatus[data-status='done'] {
-  border-color: var(--ok);
+  background: color-mix(in srgb, var(--ok) 13%, transparent);
   color: var(--ok);
 }
 
 .wfStatus[data-status='failed'] {
-  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 13%, transparent);
   color: var(--danger);
 }
 
 .wfStatus[data-status='running'] {
-  border-color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 15%, transparent);
   color: var(--warn);
 }
 
@@ -402,7 +402,7 @@
   gap: var(--space-2);
   padding: var(--space-2) var(--space-3);
   border: 1px dashed var(--accent);
-  border-radius: var(--radius);
+  border-radius: var(--radius-lg);
   background: var(--surface);
   font-size: var(--text-sm);
   color: var(--text-2);
@@ -412,7 +412,7 @@
 .agentLine {
   max-width: 100%;
   padding: var(--space-2) var(--space-3);
-  background: var(--surface-2);
+  background: color-mix(in srgb, var(--text) 4%, var(--surface));
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   font-size: var(--text-sm);
@@ -576,9 +576,9 @@
   align-items: center;
   flex-shrink: 0;
   min-height: 28px;
-  padding: 0 var(--space-2);
+  padding: 0 var(--space-3);
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
+  border-radius: var(--radius-full);
   background: var(--surface);
   color: var(--text);
   font-size: var(--text-xs);
@@ -767,6 +767,7 @@
     border: 1px solid var(--edge);
     border-radius: var(--radius-lg);
     background: var(--surface);
+    box-shadow: var(--shadow-sm);
     overflow: hidden;
   }
 
