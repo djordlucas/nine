@@ -7,7 +7,7 @@ require (
 	github.com/BurntSushi/toml v1.4.0
 	github.com/coder/websocket v1.8.15
 	github.com/getkin/kin-openapi v0.152.0
-	github.com/mark3labs/mcp-go v1.5.0
+	github.com/mark3labs/mcp-go v1.6.0
 	github.com/oapi-codegen/nethttp-middleware v1.3.1
 	github.com/oapi-codegen/runtime v1.8.0
 	golang.org/x/term v0.47.0
