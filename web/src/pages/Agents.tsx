@@ -504,7 +504,7 @@ function Roster({
     <nav class={split.list} aria-label="Agents">
       <ListHead>
         <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-        <button type="button" class={`button ${styles.new}`} onClick={() => setPicking(true)} disabled={busy}>
+        <button type="button" class="button buttonCompact" onClick={() => setPicking(true)} disabled={busy}>
           Run agent
         </button>
       </ListHead>

@@ -46,7 +46,7 @@
 
 .meta {
   margin: 0;
-  color: var(--muted, var(--text-2));
+  color: var(--text-2);
   font-size: 0.8rem;
 }
 
@@ -55,15 +55,15 @@
   font-size: 0.75rem;
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  border-radius: 4px;
-  padding: 0.1rem 0.4rem;
-  background: var(--muted-bg, #8882);
+  border-radius: var(--radius-full);
+  padding: 0.1rem 0.5rem;
+  background: color-mix(in srgb, var(--text-2) 12%, transparent);
 }
-.queued { background: #8884; }
-.running { background: #2a6dd633; color: #7db4ff; }
-.done { background: #2f9e4433; color: #6fd39a; }
-.failed { background: #e5484d33; color: #ff8589; }
-.cancelled { background: #8885; color: var(--muted, var(--text-2)); }
+.queued { background: color-mix(in srgb, var(--text-2) 12%, transparent); color: var(--text-2); }
+.running { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); }
+.done { background: color-mix(in srgb, var(--ok) 15%, transparent); color: var(--ok); }
+.failed { background: color-mix(in srgb, var(--danger) 15%, transparent); color: var(--danger); }
+.cancelled { background: color-mix(in srgb, var(--text-2) 10%, transparent); color: var(--text-2); }
 
 /* The board panel in an orchestrator agent's right side. */
 .panel {

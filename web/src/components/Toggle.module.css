@@ -1,7 +1,7 @@
 .toggle {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-2);
   padding: 0;
   border: 0;
   background: none;
@@ -16,34 +16,54 @@
   opacity: 0.6;
 }
 
-/* The square: the chat's T button, a check in place of the letter. */
+/* The switch: a pill track with a knob, in place of the browser's checkbox. */
 .box {
-  display: grid;
-  place-items: center;
+  position: relative;
   flex-shrink: 0;
-  width: 18px;
-  height: 18px;
+  width: 32px;
+  height: 19px;
   border: 1px solid var(--edge);
-  border-radius: var(--radius);
-  background: var(--surface);
-  font-size: 11px;
-  font-weight: 700;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
+  font-size: 0;
   line-height: 1;
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
 }
 
-.toggle:hover:not(:disabled) .box {
+/* The knob. */
+.box::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+  transition: transform 0.15s ease;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .box,
+  .box::after {
+    transition: none;
+  }
 }
 
 .toggle[aria-pressed='true'] .box {
-  border-color: var(--ink);
-  background: var(--ink);
-  color: var(--ink-text);
+  border-color: var(--accent);
+  background: var(--accent);
 }
 
-.toggle:active:not(:disabled) .box {
+.toggle[aria-pressed='true'] .box::after {
+  transform: translateX(13px);
+  background: var(--accent-text);
 }
 
-/* The focus ring sits on the square, which is what is pressed. */
+/* The focus ring sits on the track, which is what is pressed. */
 .toggle:focus-visible {
   outline: none;
 }

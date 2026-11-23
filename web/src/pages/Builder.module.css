@@ -107,9 +107,9 @@
 
 /* A warning badge: the form holds unsaved changes. */
 .badgeWarn {
-  padding: 0 6px;
-  border: 1px solid var(--warn);
-  border-radius: var(--radius);
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: color-mix(in srgb, var(--warn) 14%, transparent);
   color: var(--warn);
   font-size: 11px;
   line-height: 18px;

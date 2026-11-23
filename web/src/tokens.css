@@ -1,26 +1,30 @@
 /* Design tokens (adr/web-ui.md §7). Components use these, never raw values.
-   Dark mode follows the system unless data-theme on <html> overrides it. */
+   Dark mode follows the system unless data-theme on <html> overrides it.
+   v2: Inter Variable, hairline borders, layered shadows, ink primary actions
+   with the accent reserved for interactive highlights. */
 :root {
-  --bg: #f6f7fa;
+  --bg: #f6f7f8;
   --surface: #ffffff;
-  --surface-2: #f0f1f3;
-  --border: #dcdee3;
+  --surface-2: #eef0f3;
+  --border: #e4e6ea;
   --edge: var(--border);
-  --ink: var(--accent);
-  --ink-text: var(--accent-text);
-  --text: #16181d;
-  --text-2: #5b6170;
-  --accent: #2f5bd3;
+  /* The primary call to action is ink, not accent: serious and quiet. */
+  --ink: #101319;
+  --ink-text: #ffffff;
+  --text: #101319;
+  --text-2: #5c6370;
+  --accent: #4f46e5;
   --accent-text: #ffffff;
-  --ok: #1d7a46;
-  --warn: #9a6200;
-  --danger: #b42318;
+  --ok: #178a4e;
+  --warn: #b45309;
+  --danger: #dc2626;
   --focus: var(--accent);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent);
   --syntax-key: #7a3fd1;
   --syntax-string: #17803d;
   --syntax-number: #b35900;
   --syntax-literal: #c0266d;
-  --syntax-keyword: #2f5bd3;
+  --syntax-keyword: #4f46e5;
   --syntax-comment: #8a8f9c;
 
   --space-1: 4px;
@@ -30,21 +34,23 @@
   --space-5: 24px;
   --space-6: 32px;
 
-  --radius: 10px;
-  --radius-lg: 16px;
-  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.06);
-  --shadow-md: 0 4px 16px rgb(16 24 40 / 0.12);
-  --shadow-lg: 0 8px 24px rgb(16 24 40 / 0.16);
+  --radius: 8px;
+  --radius-lg: 14px;
+  --radius-full: 999px;
+  --shadow-sm: 0 1px 2px rgb(16 24 40 / 0.05);
+  --shadow-md: 0 1px 2px rgb(16 24 40 / 0.04), 0 8px 24px -8px rgb(16 24 40 / 0.1);
+  --shadow-lg: 0 2px 4px rgb(16 24 40 / 0.05), 0 16px 40px -12px rgb(16 24 40 / 0.18);
   --touch: 44px;
 
-  --font: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  --mono: ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+  --font: 'Inter Variable', 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Code', Menlo, Consolas, monospace;
   --text-2xs: 11px;
   --text-xs: 12px;
   --text-sm: 13px;
-  --text-md: 15px;
-  --text-lg: 18px;
-  --text-xl: 22px;
+  --text-md: 14px;
+  --text-lg: 16px;
+  --text-xl: 20px;
+  --text-2xl: 24px;
 
   --tabbar: 60px;
   color-scheme: light;
@@ -52,24 +58,25 @@
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
-    --bg: #0e1014;
-    --surface: #171a20;
-    --surface-2: #1f232b;
-    --border: #2c313b;
+    --bg: #0b0c0f;
+    --surface: #14161b;
+    --surface-2: #1d2026;
+    --border: #262a32;
     --edge: var(--border);
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
-    --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
-    --ink: var(--accent);
-    --ink-text: var(--accent-text);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-md: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+    --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.5), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+    --ink: #eceef2;
+    --ink-text: #0e0f14;
     --text: #e8eaee;
-    --text-2: #9aa1af;
-    --accent: #7c9cff;
-    --accent-text: #0f1115;
-    --ok: #4cc38a;
-    --warn: #e0a83a;
-    --danger: #ff7b72;
+    --text-2: #9aa1ad;
+    --accent: #818cf8;
+    --accent-text: #0e0f14;
+    --ok: #3ecf8e;
+    --warn: #f5b544;
+    --danger: #f26d6d;
     --focus: var(--accent);
+    --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
     --syntax-key: #c3a6ff;
     --syntax-string: #7fd8a0;
     --syntax-number: #f2b35e;
@@ -81,24 +88,25 @@
 }
 
 :root[data-theme='dark'] {
-  --bg: #0e1014;
-  --surface: #171a20;
-  --surface-2: #1f232b;
-  --border: #2c313b;
+  --bg: #0b0c0f;
+  --surface: #14161b;
+  --surface-2: #1d2026;
+  --border: #262a32;
   --edge: var(--border);
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.5);
-  --shadow-lg: 0 8px 24px rgb(0 0 0 / 0.6);
-  --ink: var(--accent);
-  --ink-text: var(--accent-text);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 1px 2px rgb(0 0 0 / 0.5), 0 8px 24px -8px rgb(0 0 0 / 0.6);
+  --shadow-lg: 0 2px 4px rgb(0 0 0 / 0.5), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+  --ink: #eceef2;
+  --ink-text: #0e0f14;
   --text: #e8eaee;
-  --text-2: #9aa1af;
-  --accent: #7c9cff;
-  --accent-text: #0f1115;
-  --ok: #4cc38a;
-  --warn: #e0a83a;
-  --danger: #ff7b72;
+  --text-2: #9aa1ad;
+  --accent: #818cf8;
+  --accent-text: #0e0f14;
+  --ok: #3ecf8e;
+  --warn: #f5b544;
+  --danger: #f26d6d;
   --focus: var(--accent);
+  --ring: 0 0 0 3px color-mix(in srgb, var(--accent) 35%, transparent);
   --syntax-key: #c3a6ff;
   --syntax-string: #7fd8a0;
   --syntax-number: #f2b35e;
@@ -125,7 +133,9 @@ body {
   color: var(--text);
   font-family: var(--font);
   font-size: var(--text-md);
-  line-height: 1.5;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
   -webkit-text-size-adjust: 100%;
 }
 
@@ -147,6 +157,10 @@ body {
 
 a {
   color: var(--accent);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 button,
@@ -184,6 +198,8 @@ h1,
 h2,
 h3 {
   line-height: 1.25;
+  letter-spacing: -0.02em;
+  font-weight: 650;
   margin: 0;
 }
 
@@ -200,7 +216,7 @@ samp {
 /* Shared building blocks. */
 .card {
   background: var(--surface);
-  border: 1px solid var(--edge);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   padding: var(--space-4);
 }
@@ -212,19 +228,33 @@ samp {
   }
 }
 
+/* The primary button is ink: near-black on a light page, near-white on a
+   dark one. The accent is for links, active states and focus. inline-flex so
+   an <a> styled as a button renders exactly like a <button>. */
 .button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
   min-height: var(--touch);
   padding: 0 var(--space-4);
   border: 1px solid transparent;
   border-radius: var(--radius);
-  background: var(--accent);
-  color: var(--accent-text);
+  background: var(--ink);
+  color: var(--ink-text);
   font-weight: 600;
+  text-decoration: none;
   cursor: pointer;
 }
 
+/* The compact button of a list's head row (Run agent, New agent): the
+   height of the filter beside it, on a phone too. */
+.buttonCompact {
+  min-height: 32px;
+}
+
 .button:hover:not(:disabled) {
-  filter: brightness(1.06);
+  opacity: 0.88;
 }
 
 .button:active:not(:disabled) {
@@ -232,13 +262,13 @@ samp {
 }
 
 .button:disabled {
-  opacity: 0.6;
+  opacity: 0.5;
   cursor: default;
 }
 
 /* The button's quieter kinds: secondary is a filled field with an edge,
    ghost is bare until hovered, danger is an outlined warning that fills on
-   hover. Only the primary call to action is solid accent. */
+   hover. Only the primary call to action is solid ink. */
 .buttonSecondary {
   background: var(--surface);
   border-color: var(--edge);
@@ -247,7 +277,7 @@ samp {
 
 .buttonSecondary:hover:not(:disabled) {
   background: var(--surface-2);
-  filter: none;
+  opacity: 1;
 }
 
 .buttonGhost {
@@ -259,7 +289,7 @@ samp {
 .buttonGhost:hover:not(:disabled) {
   background: var(--surface-2);
   color: var(--text);
-  filter: none;
+  opacity: 1;
 }
 
 .buttonDanger {
@@ -271,16 +301,27 @@ samp {
 .buttonDanger:hover:not(:disabled) {
   background: var(--danger);
   color: #ffffff;
-  filter: none;
+  opacity: 1;
 }
 
 .input {
   min-height: var(--touch);
   width: 100%;
   padding: 0 var(--space-3);
-  border: 1px solid var(--edge);
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
+}
+
+.input::placeholder {
+  color: var(--text-2);
+  opacity: 0.65;
+}
+
+/* A field takes the accent border and a soft ring when focused. */
+.input:focus {
+  border-color: var(--accent);
+  box-shadow: var(--ring);
 }
 
 /* A pointer needs less than a finger: on a desktop, fields and buttons are the

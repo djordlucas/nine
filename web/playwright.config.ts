@@ -8,6 +8,10 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   retries: process.env.CI ? 1 : 0,
+  // Shared CI runners stall for seconds at a time under load (the heavier
+  // desktop tests late in the run are the ones that feel it), so assertions
+  // get a longer leash there than on a local machine.
+  expect: { timeout: process.env.CI ? 20_000 : 5_000 },
   reporter: [['list']],
   use: {
     baseURL: process.env.NINE_E2E_URL ?? 'http://localhost:8080',

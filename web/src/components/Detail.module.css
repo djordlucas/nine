@@ -174,9 +174,9 @@
 
 .badge {
   flex: none;
-  padding: 0 6px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+  padding: 0 8px;
+  border-radius: var(--radius-full);
+  background: var(--surface-2);
   color: var(--text-2);
   font-size: 11px;
   line-height: 18px;
@@ -185,13 +185,13 @@
 /* A tag is plain: only what went wrong is red, so red always means that. */
 .failing,
 .failed {
-  border-color: var(--danger);
+  background: color-mix(in srgb, var(--danger) 12%, transparent);
   color: var(--danger);
 }
 
-/* On a selected row, a tag takes the row's light text. */
+/* On a selected row, a tag takes the row's text and no fill. */
 [aria-current='page'] .badge {
-  border-color: currentColor;
+  background: transparent;
   color: inherit;
 }
 
