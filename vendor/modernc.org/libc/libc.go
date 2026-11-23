@@ -52,8 +52,6 @@ var (
 	allocMu            sync.Mutex
 	environInitialized bool
 	isWindows          bool
-	ungetcMu           sync.Mutex
-	ungetc             = map[uintptr]byte{}
 )
 
 // Keep these outside of the var block otherwise go generate will miss them.
@@ -732,8 +730,6 @@ func X__builtin_object_size(t *TLS, p uintptr, typ int32) types.Size_t {
 	}
 }
 
-var atomicLoadStore16 sync.Mutex
-
 func AtomicStoreNUint8(ptr uintptr, val uint8, memorder int32) {
 	a_store_8(ptr, val)
 }
@@ -987,6 +983,36 @@ func Xllabs(tls *TLS, a int64) int64 {
 	}
 
 	return -a
+}
+
+// Tdiv_t is C's div_t.
+type Tdiv_t = struct {
+	Fquot int32
+	Frem  int32
+}
+
+// Tldiv_t is C's ldiv_t.
+type Tldiv_t = struct {
+	Fquot long
+	Frem  long
+}
+
+// div_t div(int num, int den);
+func Xdiv(tls *TLS, num, den int32) (r Tdiv_t) {
+	if __ccgo_strace {
+		trc("tls=%v num=%v den=%v, (%v:)", tls, num, den, origin(2))
+		defer func() { trc("-> %v", r) }()
+	}
+	return Tdiv_t{Fquot: num / den, Frem: num % den}
+}
+
+// ldiv_t ldiv(long num, long den);
+func Xldiv(tls *TLS, num, den long) (r Tldiv_t) {
+	if __ccgo_strace {
+		trc("tls=%v num=%v den=%v, (%v:)", tls, num, den, origin(2))
+		defer func() { trc("-> %v", r) }()
+	}
+	return Tldiv_t{Fquot: num / den, Frem: num % den}
 }
 
 func X__builtin_isnan(t *TLS, x float64) int32 {
@@ -2760,10 +2786,7 @@ func X__builtin_isunordered(t *TLS, a, b float64) int32 {
 }
 
 func AtomicLoadNUint16(ptr uintptr, memorder int32) uint16 {
-	atomicLoadStore16.Lock()
-	r := *(*uint16)(unsafe.Pointer(ptr))
-	atomicLoadStore16.Unlock()
-	return r
+	return uint16(a_load_16(ptr))
 }
 
 func PreIncAtomicInt32P(p uintptr, d int32) int32 {

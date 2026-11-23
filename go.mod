@@ -12,7 +12,7 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0
 	golang.org/x/term v0.47.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/libc v1.79.1
+	modernc.org/libc v1.82.2
 	modernc.org/sqlite v1.56.0
 )
 
@@ -59,5 +59,5 @@ require (
 	golang.org/x/sys v0.49.0 // indirect
 	golang.org/x/text v0.43.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
-	modernc.org/memory v1.12.1 // indirect
+	modernc.org/memory v1.13.0 // indirect
 )
