@@ -139,7 +139,7 @@ func Render(m llm.Message) string {
 	switch m.Role {
 	case "user":
 		if len(m.ToolResults) > 0 {
-			parts := make([]string, 0, len(m.ToolResults)+1)
+			parts := make([]string, 0, len(m.ToolResults))
 			for _, tr := range m.ToolResults {
 				parts = append(parts, fmt.Sprintf("[result of tool call %s]\n%s", tr.ToolCallID, clip(tr.Content)))
 			}

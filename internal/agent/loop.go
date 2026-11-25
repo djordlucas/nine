@@ -1173,7 +1173,7 @@ func (l *Loop) contextHistory() []llm.Message {
 	if l.summary == "" || len(l.history) == 0 || l.history[0].Role == "user" {
 		return l.history
 	}
-	out := make([]llm.Message, 0, len(l.history)+1)
+	out := make([]llm.Message, 0, len(l.history))
 	out = append(out, llm.Message{Role: "user", Text: ninectx.SummaryLead})
 	return append(out, l.history...)
 }
