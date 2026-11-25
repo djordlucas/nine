@@ -166,6 +166,9 @@ session:
     tools.max_output_tokens: 150     # honored: the dispatcher output cap, so a small
                                      # fixture can exercise the spill path
     processes.max_running: 1         # honored: the cap a start counts against
+    llm.context_budget: 12000        # honored: the window the loop assembles within
+    context.mode: "compact"          # honored: the default context-management mode
+                                     # (trim | compact; adr/context-compaction.md)
                                      # ([tools.agent] and the other toolvm-era keys
                                      # are refused at load — config schema 3)
 
