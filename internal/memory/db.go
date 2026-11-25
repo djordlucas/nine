@@ -644,6 +644,7 @@ func initSchema(d db) error {
 			skills     TEXT NOT NULL DEFAULT '',
 			self_model TEXT NOT NULL DEFAULT '',
 			reflection TEXT NOT NULL DEFAULT '',
+			context    TEXT NOT NULL DEFAULT '',
 			version    INTEGER NOT NULL DEFAULT 1,
 			status     TEXT NOT NULL DEFAULT 'active',
 			created_at TEXT NOT NULL DEFAULT ` + nowExpr + `,

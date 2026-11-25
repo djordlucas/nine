@@ -71,7 +71,9 @@ type AssemblyConfig struct {
 	// MaxToolOutputTokens mirrors [tools] max_output_tokens; 0 keeps the default.
 	MaxToolOutputTokens int
 	// ToolExposition, ResidentTools, PromotedBudget, HybridPicks and ToolTopN
-	// mirror [context].
+	// mirror [context]. ContextMode is its mode: the daemon default context-
+	// management mode for agents that do not set their own.
+	ContextMode    string
 	ToolExposition string
 	ResidentTools  []string
 	PromotedBudget int
@@ -178,6 +180,7 @@ func Assemble(c AssemblyConfig) *Assembly {
 			Embedder:               c.Embedder,
 			Memory:                 c.Store,
 			ContextBudget:          c.ContextBudget,
+			ContextMode:            c.ContextMode,
 			MaxTokens:              c.MaxTokens,
 			SystemPrompt:           c.SystemPrompt,
 			Assembler:              assembler,

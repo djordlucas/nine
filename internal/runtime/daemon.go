@@ -134,8 +134,8 @@ type queryBackend interface {
 	// (adr/agents-concept.md A5).
 	AgentList() ([]memory.Agent, error)
 	AgentGet(id string) (memory.Agent, bool, error)
-	AgentCreate(name, role, skills, selfModel, reflection string) (memory.Agent, error)
-	AgentCreateWithStatus(name, role, skills, selfModel, reflection, status string) (memory.Agent, error)
+	AgentCreate(name, role, skills, selfModel, reflection, context string) (memory.Agent, error)
+	AgentCreateWithStatus(name, role, skills, selfModel, reflection, context, status string) (memory.Agent, error)
 	AgentUpdate(id string, p memory.AgentPatch) (memory.Agent, bool, error)
 	AgentDelete(id string) (bool, error)
 	AgentVersions(id string) ([]memory.AgentVersion, error)

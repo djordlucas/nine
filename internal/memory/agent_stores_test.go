@@ -184,7 +184,7 @@ func TestAgentBundleWithDBRoundTrip(t *testing.T) {
 	}
 	defer m.Close()
 
-	a, err := m.Registry().AgentCreate("WithDB", "writer", `[]`, "", "")
+	a, err := m.Registry().AgentCreate("WithDB", "writer", `[]`, "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -19,11 +19,11 @@ func TestAgentStoreRouterRoutesAndFansOut(t *testing.T) {
 	defer mgr.Close()
 	r := newAgentStoreRouter(mgr)
 
-	a1, err := r.AgentCreate("Alpha", "researcher", "[]", "", "")
+	a1, err := r.AgentCreate("Alpha", "researcher", "[]", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}
-	a2, err := r.AgentCreate("Beta", "writer", "[]", "", "")
+	a2, err := r.AgentCreate("Beta", "writer", "[]", "", "", "")
 	if err != nil {
 		t.Fatal(err)
 	}

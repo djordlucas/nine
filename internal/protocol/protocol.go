@@ -559,15 +559,27 @@ type BoardTask struct {
 	UpdatedAt  string `json:"updated_at"`
 }
 
+// Context-management modes for an agent (adr/context-compaction.md). Trim is
+// the current default: the context builder drops the oldest messages under
+// budget. Compact folds the older conversation into a model-written summary
+// carried in the system prompt — the intended future default.
+const (
+	ContextModeTrim    = "trim"
+	ContextModeCompact = "compact"
+)
+
 // AgentDefinition is the composable bundle an agent is made of
 // (adr/agents-concept.md A3): its role, skills, self-model and reflection.
 // SelfModel and Reflection are free-form JSON, empty when unset.
+// Context is the agent's context-management mode: "" inherits the daemon
+// default ([context] mode in nine.toml), "trim" or "compact" override it.
 type AgentDefinition struct {
 	Name       string          `json:"name"`
 	Role       string          `json:"role,omitempty"`
 	Skills     []string        `json:"skills,omitempty"`
 	SelfModel  json.RawMessage `json:"self_model,omitempty"`
 	Reflection json.RawMessage `json:"reflection,omitempty"`
+	Context    string          `json:"context,omitempty"`
 }
 
 // Agent is a stored agent definition with its identity and version

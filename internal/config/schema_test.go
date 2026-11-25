@@ -145,6 +145,9 @@ func TestValidateContextExposition(t *testing.T) {
 		"[context]\npromoted_budget = -1\n":                                  false,
 		"[context]\ntool_exposition = \"hybrid\"\nhybrid_picks = 2\n":        true,
 		"[context]\nhybrid_picks = -1\n":                                     false,
+		"[context]\nmode = \"trim\"\n":                                      true,
+		"[context]\nmode = \"compact\"\n":                                   true,
+		"[context]\nmode = \"summarize\"\n":                                 false,
 	} {
 		cfg, err := config.Load(writeConfig(t, "[llm]\nprovider = \"ollama\"\n"+body))
 		if err == nil {

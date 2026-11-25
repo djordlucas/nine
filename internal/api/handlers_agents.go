@@ -33,6 +33,9 @@ func toAPIAgent(a protocol.Agent) apigen.Agent {
 			def.Reflection = &m
 		}
 	}
+	if a.Definition.Context != "" {
+		def.Context = (*apigen.AgentDefinitionContext)(&a.Definition.Context)
+	}
 	return apigen.Agent{
 		Id: a.ID, Version: a.Version, Status: apigen.AgentStatus(a.Status), Definition: def,
 		CreatedAt: parseTime(a.CreatedAt), UpdatedAt: parseTime(a.UpdatedAt),
@@ -54,6 +57,9 @@ func toWireDefinition(d apigen.AgentDefinition) protocol.AgentDefinition {
 	if d.Reflection != nil {
 		raw, _ := json.Marshal(*d.Reflection)
 		out.Reflection = raw
+	}
+	if d.Context != nil {
+		out.Context = string(*d.Context)
 	}
 	return out
 }
@@ -152,6 +158,9 @@ func (s *Server) UpdateAgent(ctx context.Context, request apigen.UpdateAgentRequ
 	}
 	if b.Reflection != nil {
 		patch["reflection"] = *b.Reflection
+	}
+	if b.Context != nil {
+		patch["context"] = string(*b.Context)
 	}
 	a, err := cl.AgentUpdate(request.Id, patch)
 	if err == nil {

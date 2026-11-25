@@ -8,6 +8,69 @@ import (
 	"nine/internal/protocol"
 )
 
+// TestAgentContextField checks the per-agent context mode (adr/context-compaction.md)
+// flows create → wire → response, and patch → wire.
+func TestAgentContextField(t *testing.T) {
+	agent := protocol.Agent{
+		ID: "agent_1", Version: 1,
+		Definition: protocol.AgentDefinition{Name: "Researcher", Context: "compact"},
+		CreatedAt:  "2026-11-16T10:00:00.000Z", UpdatedAt: "2026-11-16T10:00:00.000Z",
+	}
+	var createdDef *protocol.AgentDefinition
+	var patched map[string]any
+	sock := scriptedDaemon(t, func(m protocol.Msg) []protocol.Msg {
+		switch m.Type {
+		case protocol.TypeAgentCreate:
+			var def protocol.AgentDefinition
+			if err := json.Unmarshal([]byte(m.Text), &def); err != nil {
+				return errReply("bad definition: " + err.Error())
+			}
+			createdDef = &def
+			return textReply(t, protocol.TypeAgentCreate, agent)
+		case protocol.TypeAgentGet:
+			return textReply(t, protocol.TypeAgentGet, agent)
+		case protocol.TypeAgentUpdate:
+			if err := json.Unmarshal([]byte(m.Text), &patched); err != nil {
+				return errReply("bad patch: " + err.Error())
+			}
+			return textReply(t, protocol.TypeAgentUpdate, agent)
+		}
+		return errReply("unexpected " + string(m.Type))
+	})
+
+	w := doAt(t, sock, http.MethodPost, "/api/v1/agents", `{"name":"Researcher","context":"compact"}`)
+	if w.Code != 200 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	if createdDef == nil || createdDef.Context != "compact" {
+		t.Fatalf("wire definition context = %+v, want compact", createdDef)
+	}
+	var got struct {
+		Definition struct {
+			Context string `json:"context"`
+		} `json:"definition"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.Definition.Context != "compact" {
+		t.Fatalf("create response context: err=%v body=%s", err, w.Body.String())
+	}
+
+	w = doAt(t, sock, http.MethodGet, "/api/v1/agents/agent_1", "")
+	if w.Code != 200 {
+		t.Fatalf("get: %d %s", w.Code, w.Body.String())
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil || got.Definition.Context != "compact" {
+		t.Fatalf("get response context: err=%v body=%s", err, w.Body.String())
+	}
+
+	w = doAt(t, sock, http.MethodPatch, "/api/v1/agents/agent_1", `{"context":"trim"}`)
+	if w.Code != 200 {
+		t.Fatalf("patch: %d %s", w.Code, w.Body.String())
+	}
+	if patched["context"] != "trim" {
+		t.Fatalf("wire patch = %v, want context trim", patched)
+	}
+}
+
 // TestAgentCRUDEndpoints maps the /api/v1/agents surface over a scripted daemon:
 // list, create, get, patch, delete, run, and the 404 mapping.
 func TestAgentCRUDEndpoints(t *testing.T) {

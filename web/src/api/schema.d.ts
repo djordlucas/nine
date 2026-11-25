@@ -2155,6 +2155,11 @@ export interface components {
             reflection?: {
                 [key: string]: unknown;
             };
+            /**
+             * @description Context-management mode (adr/context-compaction.md): "trim" drops the oldest messages when the window fills; "compact" summarizes the folded prefix into the system prompt. Omit to inherit the daemon default ([context] mode in nine.toml).
+             * @enum {string}
+             */
+            context?: "trim" | "compact";
         };
         /** @description An edit of one agent definition; only the fields present are changed. skills, self_model and reflection take JSON values — an empty array or object clears the field. */
         AgentPatch: {
@@ -2172,6 +2177,11 @@ export interface components {
             reflection?: {
                 [key: string]: unknown;
             };
+            /**
+             * @description Replacement context-management mode; omit to keep the current one.
+             * @enum {string}
+             */
+            context?: "trim" | "compact";
         };
         /** @description One stored agent definition with its identity and current version (adr/agents-concept.md A5; definitions are versioned, Q14). */
         Agent: {

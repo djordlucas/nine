@@ -96,7 +96,7 @@ func TestBuildReportMatchesAssembly(t *testing.T) {
 	}
 
 	// Every priority band is represented as a section, in order.
-	wantNames := []string{"system-core", "tools", "self-model", "enrichment", "history", "scratchpad", "plan", "extras"}
+	wantNames := []string{"system-core", "tools", "self-model", "enrichment", "summary", "history", "scratchpad", "plan", "extras"}
 	if len(rep.Sections) != len(wantNames) {
 		t.Fatalf("sections = %d, want %d (%v)", len(rep.Sections), len(wantNames), rep.Sections)
 	}

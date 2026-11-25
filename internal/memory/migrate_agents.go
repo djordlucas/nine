@@ -86,7 +86,7 @@ func MigrateToAgentStores(m *AgentStores) error {
 
 	for _, convID := range ids {
 		role := legacyRole(reg, convID)
-		agent, err := reg.AgentCreateWithStatus("legacy-"+convID, role, "[]", "", "", AgentActive)
+		agent, err := reg.AgentCreateWithStatus("legacy-"+convID, role, "[]", "", "", "", AgentActive)
 		if err != nil {
 			return fmt.Errorf("migrate conversation %s: %w", convID, err)
 		}

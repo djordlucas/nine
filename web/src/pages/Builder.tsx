@@ -281,13 +281,14 @@ function AgentForm({
   const [loadError, setLoadError] = useState<string | null>(null);
   const [name, setName] = useState('');
   const [role, setRole] = useState('');
+  const [contextMode, setContextMode] = useState('');
   const [skillsText, setSkillsText] = useState('');
   const [selfModel, setSelfModel] = useState('');
   const [reflection, setReflection] = useState('');
   const [busySave, setBusySave] = useState(false);
   const [error, setError] = useState<string | null>(null);
   // The loaded values, to tell "unsaved changes" from a saved form.
-  const savedRef = useRef<{ name: string; role: string; skillsText: string; selfModel: string; reflection: string } | null>(null);
+  const savedRef = useRef<{ name: string; role: string; contextMode: string; skillsText: string; selfModel: string; reflection: string } | null>(null);
 
   useEffect(() => {
     if (isNew) return;
@@ -302,6 +303,7 @@ function AgentForm({
       const loaded = {
         name: a.definition.name,
         role: a.definition.role ?? '',
+        contextMode: a.definition.context ?? '',
         skillsText: (a.definition.skills ?? []).join(', '),
         selfModel: a.definition.self_model ? JSON.stringify(a.definition.self_model, null, 2) : '',
         reflection: a.definition.reflection ? JSON.stringify(a.definition.reflection, null, 2) : '',
@@ -314,6 +316,7 @@ function AgentForm({
       // concurrent edit wins over the incoming load).
       setName((cur) => (prev && cur !== prev.name ? cur : loaded.name));
       setRole((cur) => (prev && cur !== prev.role ? cur : loaded.role));
+      setContextMode((cur) => (prev && cur !== prev.contextMode ? cur : loaded.contextMode));
       setSkillsText((cur) => (prev && cur !== prev.skillsText ? cur : loaded.skillsText));
       setSelfModel((cur) => (prev && cur !== prev.selfModel ? cur : loaded.selfModel));
       setReflection((cur) => (prev && cur !== prev.reflection ? cur : loaded.reflection));
@@ -329,6 +332,7 @@ function AgentForm({
     savedRef.current !== null &&
     (name !== savedRef.current.name ||
       role !== savedRef.current.role ||
+      contextMode !== savedRef.current.contextMode ||
       skillsText !== savedRef.current.skillsText ||
       selfModel !== savedRef.current.selfModel ||
       reflection !== savedRef.current.reflection);
@@ -363,6 +367,7 @@ function AgentForm({
           .filter(Boolean),
         self_model: parseJson(selfModel),
         reflection: parseJson(reflection),
+        context: contextMode ? (contextMode as AgentDefinition['context']) : undefined,
       };
       if (isNew) {
         const { data: a, error: e } = await api.POST('/agents', { body: def });
@@ -372,7 +377,7 @@ function AgentForm({
         const { data: a, error: e } = await api.PATCH('/agents/{id}', { params: { path: { id } }, body: def });
         if (!a) throw new Error(errorMessage(e, 'Could not update the agent.'));
       }
-      savedRef.current = { name: name.trim(), role, skillsText, selfModel, reflection };
+      savedRef.current = { name: name.trim(), role, contextMode, skillsText, selfModel, reflection };
       onSaved();
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -449,6 +454,14 @@ function AgentForm({
                   {r.name}
                 </option>
               ))}
+            </select>
+          </div>
+          <div class={styles.field}>
+            <label for="agent-context">Context</label>
+            <select id="agent-context" class="input" value={contextMode} onChange={(e) => setContextMode((e.target as HTMLSelectElement).value)}>
+              <option value="">daemon default</option>
+              <option value="trim">trim — drop oldest messages</option>
+              <option value="compact">compact — summarize the folded prefix</option>
             </select>
           </div>
         </div>

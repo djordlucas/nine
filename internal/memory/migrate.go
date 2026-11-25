@@ -478,6 +478,12 @@ var migrations = []migrationStep{
 	{name: "board_tasks_role", fn: func(q sqlExec) error {
 		return addColumnIfMissing(q, "board_tasks", "role", "TEXT NOT NULL DEFAULT ''")
 	}},
+
+	// 27 → 28: an agent's context-management mode (adr/context-compaction.md):
+	// '' inherits the daemon default, "trim" or "compact" override it.
+	{name: "agents_context", fn: func(q sqlExec) error {
+		return addColumnIfMissing(q, "agents", "context", "TEXT NOT NULL DEFAULT ''")
+	}},
 }
 
 // convertGoalPlans turns each session plan with a pursue routine into the

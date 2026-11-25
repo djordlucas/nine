@@ -15,14 +15,14 @@ func TestAgentCRUD(t *testing.T) {
 	}
 
 	// Create requires a name and a JSON-array skills field.
-	if _, err := store.AgentCreate("  ", "", "", "", ""); err == nil {
+	if _, err := store.AgentCreate("  ", "", "", "", "", ""); err == nil {
 		t.Fatal("create with empty name: want error")
 	}
-	if _, err := store.AgentCreate("a", "", "not-json", "", ""); err == nil {
+	if _, err := store.AgentCreate("a", "", "not-json", "", "", ""); err == nil {
 		t.Fatal("create with non-JSON skills: want error")
 	}
 
-	a1, err := store.AgentCreate("Researcher", "researcher", `["web"]`, `{"k":"v"}`, "")
+	a1, err := store.AgentCreate("Researcher", "researcher", `["web"]`, `{"k":"v"}`, "", "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
@@ -85,20 +85,60 @@ func TestAgentCRUD(t *testing.T) {
 	}
 }
 
+func TestAgentContextMode(t *testing.T) {
+	store, err := memtest.Open(t)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// "" (inherit the daemon default) and the two modes are accepted; anything
+	// else is refused.
+	a, err := store.AgentCreate("C1", "", "", "", "", "compact")
+	if err != nil {
+		t.Fatalf("create compact: %v", err)
+	}
+	if a.Context != "compact" {
+		t.Fatalf("context = %q, want compact", a.Context)
+	}
+	if _, err := store.AgentCreate("C2", "", "", "", "", "bogus"); err == nil {
+		t.Fatal("create bogus context: want error")
+	}
+
+	// Patch round-trips; empty clears back to inherit.
+	mode := "trim"
+	upd, ok, err := store.AgentUpdate(a.ID, memory.AgentPatch{Context: &mode})
+	if err != nil || !ok || upd.Context != "trim" {
+		t.Fatalf("patch trim: ok=%v err=%v agent=%+v", ok, err, upd)
+	}
+	got, ok, err := store.AgentGet(a.ID)
+	if err != nil || !ok || got.Context != "trim" {
+		t.Fatalf("get after patch: ok=%v err=%v agent=%+v", ok, err, got)
+	}
+	clear := ""
+	upd, ok, err = store.AgentUpdate(a.ID, memory.AgentPatch{Context: &clear})
+	if err != nil || !ok || upd.Context != "" {
+		t.Fatalf("patch clear: ok=%v err=%v agent=%+v", ok, err, upd)
+	}
+	bogus := "bogus"
+	if _, _, err := store.AgentUpdate(a.ID, memory.AgentPatch{Context: &bogus}); err == nil {
+		t.Fatal("patch bogus context: want error")
+	}
+}
+
 func TestAgentStagingAndApprove(t *testing.T) {
 	store, err := memtest.Open(t)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	staged, err := store.AgentCreateWithStatus("Imported", "researcher", `[]`, "", "", memory.AgentStaged)
+	staged, err := store.AgentCreateWithStatus("Imported", "researcher", `[]`, "", "", "", memory.AgentStaged)
 	if err != nil {
 		t.Fatalf("create staged: %v", err)
 	}
 	if staged.Status != memory.AgentStaged {
 		t.Fatalf("status = %q, want staged", staged.Status)
 	}
-	active, err := store.AgentCreate("Local", "", "", "", "")
+	active, err := store.AgentCreate("Local", "", "", "", "", "")
 	if err != nil || active.Status != memory.AgentActive {
 		t.Fatalf("create active: %v %+v", err, active)
 	}
@@ -111,7 +151,7 @@ func TestAgentStagingAndApprove(t *testing.T) {
 	if _, ok, _ := store.AgentApprove("agent_nope"); ok {
 		t.Fatal("approve unknown: want false")
 	}
-	if _, err := store.AgentCreateWithStatus("x", "", "", "", "", "bogus"); err == nil {
+	if _, err := store.AgentCreateWithStatus("x", "", "", "", "", "", "bogus"); err == nil {
 		t.Fatal("create with bogus status: want error")
 	}
 }
@@ -121,7 +161,7 @@ func TestAgentBundleRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	a, err := store.AgentCreate("Researcher", "researcher", `["web","git"]`, `{"persona":"x"}`, `{"interval":"1h"}`)
+	a, err := store.AgentCreate("Researcher", "researcher", `["web","git"]`, `{"persona":"x"}`, `{"interval":"1h"}`, "")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
