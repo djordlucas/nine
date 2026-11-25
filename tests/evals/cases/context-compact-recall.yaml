@@ -1,0 +1,40 @@
+id: context-compact-recall
+description: "With a small context window in compact mode, an early fact survives many turns because the folded prefix is summarized into the system prompt, not dropped."
+track: live
+tier: multi_step
+tags: [context, compact, memory]
+
+# Compaction (adr/context-compaction.md) under a small window. The window is
+# lowered via session.config so a handful of turns cross the 75% threshold;
+# the summary section must then appear in the system prompt of a later
+# request, and the fact from turn 1 must still be recallable (it was also
+# stored with memory_set, so recall alone does not prove compaction — the
+# system_contains assertion does).
+
+session:
+  config:
+    context.mode: "compact"
+    llm.context_budget: 12000
+
+prompts:
+  - "Remember: my deploy code word is blue-heron-42. Save it under the key self/codeword using memory_set, then confirm you saved it."
+  - "Tell me a short paragraph about the history of the lighthouse at Portland Head."
+  - "Tell me a short paragraph about how tea is processed after picking."
+  - "Tell me a short paragraph about the construction of Roman aqueducts."
+  - "Tell me a short paragraph about how lithium-ion batteries are recycled."
+  - "What is my deploy code word? Answer with just the code word."
+
+expect:
+  trajectory:
+    tools_all_of: [memory_set]
+    llm_request:
+      system_contains: ["## Conversation summary"]
+    max_turns: 6
+    no_stall: true
+  answer:
+    contains: ["blue-heron-42"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

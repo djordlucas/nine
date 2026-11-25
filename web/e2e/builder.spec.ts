@@ -49,8 +49,26 @@ test('an agent is created, run, exported, deleted, imported staged and approved'
   // Create: the app routes to the new agent's page.
   await list.getByRole('link', { name: 'New agent' }).click();
   await page.getByLabel('Name', { exact: true }).fill(name);
+  await page.getByLabel('Context', { exact: true }).selectOption('compact');
   await page.getByRole('button', { name: 'Create', exact: true }).click();
-  await expect(page).toHaveURL(/\/builder\/agents\/[^/]+$/);
+  // "new" also matches [^/]+, so wait for the routed agent id itself.
+  await expect(page).toHaveURL(/\/builder\/agents\/agent_/);
+
+  // The context mode survives a reload.
+  await page.reload();
+  await expect(page.getByLabel('Context', { exact: true })).toHaveValue('compact');
+
+  // The stored agent is offered in the Run agent pop-up, with its mode shown.
+  await page.goto('/conversations');
+  await page.getByRole('button', { name: 'Run agent' }).click();
+  const picker = page.getByRole('dialog');
+  await picker.getByRole('radio', { name: rowRe }).click();
+  await expect(picker.getByRole('radio', { name: rowRe })).toContainText('compact');
+  await picker.getByRole('button', { name: 'Start', exact: true }).click();
+  await expect(page).toHaveURL(/\/conversations\/[0-9a-f-]+$/);
+  // Back to the agent's page for the Run/Export steps below.
+  await page.goto('/builder/agents');
+  await list.getByRole('link', { name: rowRe }).click();
 
   // Run: lands on the new conversation.
   await page.getByRole('button', { name: 'Run', exact: true }).click();

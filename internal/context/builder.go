@@ -67,8 +67,13 @@ type BuildInput struct {
 	// session; adr/reactive-events.md §5). Priority 2.6: capped small and
 	// dropped when budget is tight, so enrichment never crowds out the turn.
 	SystemEnrichment string
-	Tools            []ToolWithVector // priority 2: relevance-filtered
-	QueryVector      []float32        // embedding of the current query; nil → no ranking
+	// SystemSummary is the compaction summary of the conversation's folded
+	// older part (adr/context-compaction.md), empty when the loop runs in
+	// trim mode or has never compacted. Priority 2.7: capped at a small
+	// share of the window, dropped only when the budget is extremely tight.
+	SystemSummary string
+	Tools         []ToolWithVector // priority 2: relevance-filtered
+	QueryVector   []float32        // embedding of the current query; nil → no ranking
 	// ResultVector embeds the turn's latest tool results. Hybrid picks rank
 	// on the better of it and QueryVector, so a task the model learns from a
 	// tool result gets its tools within the turn. nil → QueryVector alone.
@@ -215,6 +220,23 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 		add("enrichment", "2.6", 0, false, "empty")
 	}
 
+	// Priority 2.7 — compaction summary: capped at SummaryShare of the window.
+	summary := ""
+	const summaryMin = 256
+	if input.SystemSummary != "" {
+		summaryCap := max(summaryMin, int(float64(budget)*SummaryShare))
+		cost := min(countTokens(input.SystemSummary), summaryCap)
+		if remaining >= cost {
+			summary = truncateTokens(input.SystemSummary, summaryCap)
+			remaining -= cost
+			add("summary", "2.7", cost, true, fmt.Sprintf("capped at %d tokens", summaryCap))
+		} else {
+			add("summary", "2.7", 0, false, "dropped: budget too tight")
+		}
+	} else {
+		add("summary", "2.7", 0, false, "empty")
+	}
+
 	// Priority 3 — message history: keep most recent, drop oldest.
 	history := trimFront(input.History, remaining, messageTokens)
 	histTok := 0
@@ -264,6 +286,10 @@ func (b *Builder) assemble(input BuildInput, report bool) (llm.Request, int, Rep
 
 	if enrichment != "" {
 		system += "\n\n" + enrichment
+	}
+
+	if summary != "" {
+		system += "\n\n" + summary
 	}
 
 	if plan != "" {

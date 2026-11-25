@@ -205,6 +205,7 @@ func runDaemon() {
 		PromotedBudget:         cfg.Context.PromotedBudget,
 		HybridPicks:            cfg.Context.HybridPicks,
 		ToolTopN:               cfg.Context.ToolTopN,
+		ContextMode:            cfg.Context.Mode,
 		MaxJobsPerConversation: cfg.Plugins.MaxJobsPerConversation,
 		MaxJobsTotal:           cfg.Plugins.MaxJobsTotal,
 		JobWaiters:             jobWaiters,

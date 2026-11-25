@@ -387,6 +387,11 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 	if budget == 0 {
 		budget = 100_000
 	}
+	// Per-case override of the window the loop assembles within
+	// ([llm] context_budget in production).
+	if v := caseInt(c, "llm.context_budget", 0); v > 0 {
+		budget = v
+	}
 
 	var hitl *runtime.HITL
 	if c.Session.Interactive {
@@ -456,6 +461,7 @@ func (h *Harness) start(ctx context.Context, c *Case, provider llm.Provider) (lv
 		Plugins:             pluginMgr,
 		Embedder:            embedder,
 		ContextBudget:       budget,
+		ContextMode:         caseString(c, "context.mode"),
 		MaxToolOutputTokens: maxToolOutputTokens(h.MaxToolOutputTokens, c),
 		ToolExposition:      caseString(c, ArmKey),
 		ResidentTools:       caseStrings(c, "context.resident_tools"),

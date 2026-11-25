@@ -116,6 +116,11 @@ type ContextConfig struct {
 	// besides the pinned ones, best-ranked against the turn's request. 0 is 20.
 	// Ignored unless ranked.
 	ToolTopN int `toml:"tool_top_n"`
+	// Mode is the default context-management mode for agents that do not set
+	// their own: "trim" (the default) drops the oldest messages when the
+	// window fills; "compact" summarizes the folded prefix into the system
+	// prompt. "compact" is the intended future default.
+	Mode string `toml:"mode"`
 }
 
 // ToolsConfig tunes the tool-dispatch boundary. It is `[tools]` rather than
@@ -1111,6 +1116,11 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.Context.ToolTopN < 0 {
 		return fmt.Errorf("[context] tool_top_n must not be negative")
+	}
+	switch cfg.Context.Mode {
+	case "", "trim", "compact":
+	default:
+		return fmt.Errorf("[context] mode %q must be %q or %q", cfg.Context.Mode, "trim", "compact")
 	}
 	if cfg.Processes.DatabaseMaxMB < 0 {
 		return fmt.Errorf("[processes] database_max_mb must not be negative")

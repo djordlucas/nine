@@ -41,6 +41,10 @@ type LoopConfig struct {
 	Embedder      embed.Embedder
 	Memory        *memory.Store
 	ContextBudget int
+	// ContextMode is the daemon default for an agent's context-management
+	// mode ([context] mode; "trim" or "compact"). An agent's own setting
+	// overrides it. Empty means trim.
+	ContextMode string
 	// MaxTokens caps one reply of each agent loop's call ([llm] max_tokens).
 	// 0 keeps defaultMaxReplyTokens.
 	MaxTokens    int
@@ -787,8 +791,17 @@ func (f *AgentBuilder) build(agentID string, role Role, depthGuard int, gate gat
 		}
 	}
 
+	// Context-management mode (adr/context-compaction.md): the agent's own
+	// setting wins; an unset agent inherits the daemon's [context] mode
+	// default; "" means trim.
+	contextMode := f.cfg.Loop.ContextMode
+	if agentDef != nil && agentDef.Context != "" {
+		contextMode = agentDef.Context
+	}
+
 	l := agent.NewLoop(agent.Config{
-		Role: role.Name,
+		Role:       role.Name,
+		ContextMode: contextMode,
 		// Every loop is built here — root sessions via BuildForRole, sub-agents
 		// via the spawn path — each with its own id, so a sub-agent reports the
 		// session it actually is rather than its parent's.

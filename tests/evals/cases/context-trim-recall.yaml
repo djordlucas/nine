@@ -1,0 +1,33 @@
+id: context-trim-recall
+description: "Control for context-compact-recall: the same small window in the default trim mode never writes a summary section into the system prompt; the stored fact is still recalled from memory."
+track: live
+tier: multi_step
+tags: [context, trim, memory]
+
+session:
+  config:
+    context.mode: "trim"
+    llm.context_budget: 12000
+
+prompts:
+  - "Remember: my deploy code word is blue-heron-42. Save it under the key self/codeword using memory_set, then confirm you saved it."
+  - "Tell me a short paragraph about the history of the lighthouse at Portland Head."
+  - "Tell me a short paragraph about how tea is processed after picking."
+  - "Tell me a short paragraph about the construction of Roman aqueducts."
+  - "Tell me a short paragraph about how lithium-ion batteries are recycled."
+  - "What is my deploy code word? Answer with just the code word."
+
+expect:
+  trajectory:
+    tools_all_of: [memory_set]
+    llm_request:
+      system_not_contains: ["## Conversation summary"]
+    max_turns: 6
+    no_stall: true
+  answer:
+    contains: ["blue-heron-42"]
+
+runs: 3
+pass_threshold: "2/3"
+models:
+  expected_pass_min_class: small

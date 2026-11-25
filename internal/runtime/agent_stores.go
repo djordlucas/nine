@@ -90,11 +90,11 @@ func (r *agentStoreRouter) AgentList() ([]memory.Agent, error) { return r.mgr.Re
 func (r *agentStoreRouter) AgentGet(id string) (memory.Agent, bool, error) {
 	return r.mgr.Registry().AgentGet(id)
 }
-func (r *agentStoreRouter) AgentCreate(n, ro, sk, sm, re string) (memory.Agent, error) {
-	return r.mgr.Registry().AgentCreate(n, ro, sk, sm, re)
+func (r *agentStoreRouter) AgentCreate(n, ro, sk, sm, re, ctx string) (memory.Agent, error) {
+	return r.mgr.Registry().AgentCreate(n, ro, sk, sm, re, ctx)
 }
-func (r *agentStoreRouter) AgentCreateWithStatus(n, ro, sk, sm, re, st string) (memory.Agent, error) {
-	return r.mgr.Registry().AgentCreateWithStatus(n, ro, sk, sm, re, st)
+func (r *agentStoreRouter) AgentCreateWithStatus(n, ro, sk, sm, re, ctx, st string) (memory.Agent, error) {
+	return r.mgr.Registry().AgentCreateWithStatus(n, ro, sk, sm, re, ctx, st)
 }
 func (r *agentStoreRouter) AgentUpdate(id string, p memory.AgentPatch) (memory.Agent, bool, error) {
 	return r.mgr.Registry().AgentUpdate(id, p)

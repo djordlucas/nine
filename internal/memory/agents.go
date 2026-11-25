@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"nine/internal/protocol"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -29,6 +30,7 @@ type Agent struct {
 	Skills     string `json:"skills"`
 	SelfModel  string `json:"self_model"`
 	Reflection string `json:"reflection"`
+	Context    string `json:"context"` // "" | "trim" | "compact" (adr/context-compaction.md)
 	Version    int    `json:"version"`
 	Status     string `json:"status"`
 	CreatedAt  string `json:"created_at"`
@@ -42,6 +44,7 @@ type AgentPatch struct {
 	Skills     *string // JSON array text; set to "[]" to clear
 	SelfModel  *string // JSON text; set to "" to clear
 	Reflection *string // JSON text; set to "" to clear
+	Context    *string // context mode; "" clears to the daemon default
 }
 
 // AgentVersion is one row of agent_versions: the agent's full definition as of
@@ -55,12 +58,12 @@ type AgentVersion struct {
 
 func scanAgent(s interface{ Scan(...any) error }) (Agent, error) {
 	var a Agent
-	err := s.Scan(&a.ID, &a.Name, &a.Role, &a.Skills, &a.SelfModel, &a.Reflection,
+	err := s.Scan(&a.ID, &a.Name, &a.Role, &a.Skills, &a.SelfModel, &a.Reflection, &a.Context,
 		&a.Version, &a.Status, &a.CreatedAt, &a.UpdatedAt)
 	return a, err
 }
 
-const agentCols = `id, name, role, skills, self_model, reflection, version, status, created_at, updated_at`
+const agentCols = `id, name, role, skills, self_model, reflection, context, version, status, created_at, updated_at`
 
 // validSkillsJSON reports whether s is a JSON array of strings ('' is valid).
 func validSkillsJSON(s string) bool {
@@ -72,13 +75,19 @@ func validSkillsJSON(s string) bool {
 }
 
 // AgentCreate inserts a new active agent at version 1 and records that version.
-func (s *Store) AgentCreate(name, role, skills, selfModel, reflection string) (Agent, error) {
-	return s.AgentCreateWithStatus(name, role, skills, selfModel, reflection, AgentActive)
+// validContext reports whether s is an accepted context mode: empty
+// (inherit the daemon default) or one of the protocol constants.
+func validContext(s string) bool {
+	return s == "" || s == protocol.ContextModeTrim || s == protocol.ContextModeCompact
+}
+
+func (s *Store) AgentCreate(name, role, skills, selfModel, reflection, context string) (Agent, error) {
+	return s.AgentCreateWithStatus(name, role, skills, selfModel, reflection, context, AgentActive)
 }
 
 // AgentCreateWithStatus is AgentCreate with an explicit status — an imported
 // bundle lands staged (adr/agents-concept.md Q30), operator-created active.
-func (s *Store) AgentCreateWithStatus(name, role, skills, selfModel, reflection, status string) (Agent, error) {
+func (s *Store) AgentCreateWithStatus(name, role, skills, selfModel, reflection, context, status string) (Agent, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return Agent{}, fmt.Errorf("agent: name is required")
@@ -89,11 +98,14 @@ func (s *Store) AgentCreateWithStatus(name, role, skills, selfModel, reflection,
 	if status != AgentActive && status != AgentStaged {
 		return Agent{}, fmt.Errorf("agent: unknown status %q", status)
 	}
+	if !validContext(context) {
+		return Agent{}, fmt.Errorf("agent: unknown context mode %q", context)
+	}
 	id := "agent_" + NewID()
 	if _, err := s.db.Exec(
-		`INSERT INTO agents (id, name, role, skills, self_model, reflection, version, status)
-		 VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
-		id, name, role, skills, selfModel, reflection, status); err != nil {
+		`INSERT INTO agents (id, name, role, skills, self_model, reflection, context, version, status)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+		id, name, role, skills, selfModel, reflection, context, status); err != nil {
 		return Agent{}, err
 	}
 	a, ok, err := s.AgentGet(id)
@@ -164,6 +176,13 @@ func (s *Store) AgentUpdate(id string, p AgentPatch) (Agent, bool, error) {
 	if p.Reflection != nil {
 		sets = append(sets, "reflection = ?")
 		args = append(args, *p.Reflection)
+	}
+	if p.Context != nil {
+		if !validContext(*p.Context) {
+			return Agent{}, false, fmt.Errorf("agent: unknown context mode %q", *p.Context)
+		}
+		sets = append(sets, "context = ?")
+		args = append(args, *p.Context)
 	}
 	args = append(args, id)
 	res, err := s.db.Exec(

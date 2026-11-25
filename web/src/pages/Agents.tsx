@@ -1,7 +1,7 @@
 import { Fragment } from 'preact';
 import { useEffect, useMemo, useRef, useState } from 'preact/hooks';
 import { useLocation, useRoute } from 'preact-iso';
-import { api, errorMessage, get } from '../api/client';
+import { api, errorMessage, get, type Schemas } from '../api/client';
 import { ago } from '../format';
 import { shortId } from '../journal';
 import { recentEvents } from '../api/events';
@@ -263,6 +263,10 @@ function Roster({
   // The role a new agent runs as (adr/orchestrator-board.md §2.5); default
   // orchestrator. Chosen in the pop-up the Run agent button opens.
   const [role, setRole] = useState('orchestrator');
+  // A stored agent chosen in the pop-up instead of an ad-hoc role; running it
+  // goes through POST /agents/{id}/run so its definition (skills, self-model,
+  // context mode) applies.
+  const [agentPick, setAgentPick] = useState<string | null>(null);
   const picker = useRef<HTMLDialogElement>(null);
   // Row-level tools: a text filter, type chips, and per-row actions.
   const [filter, setFilter] = useState('');
@@ -286,6 +290,10 @@ function Roster({
     const r = await get(api.GET('/roles', {}), 'the role registry');
     return (r.data ?? []) as { name: string; description?: string }[];
   }, []);
+  const { data: storedAgents } = useLive(async () => {
+    const r = await get(api.GET('/agents', { params: { query: { limit: 200 } } }), 'agents');
+    return (r.data ?? []) as Schemas['Agent'][];
+  }, ['agent_created', 'agent_updated', 'agent_deleted'], `${created}`);
   const { data, error: loadError } = useLive(
     async () => {
       const list = (await get(api.GET('/conversations', { params: { query: { limit: 200 } } }), 'conversations')).data ?? [];
@@ -323,15 +331,21 @@ function Roster({
   const start = async () => {
     setBusy(true);
     setError(null);
-    // Interactive: the agent may ask the operator questions.
-    const { data: made, error: e } = await api.POST('/conversations', { body: { interactive: true, role } });
+    // A stored agent runs through its own definition; otherwise an ad-hoc
+    // conversation in the picked role. Interactive either way: the agent may
+    // ask the operator questions.
+    const req = agentPick
+      ? api.POST('/agents/{id}/run', { params: { path: { id: agentPick } }, body: { interactive: true } })
+      : api.POST('/conversations', { body: { interactive: true, role } });
+    const { data: made, error: e } = await req;
     setBusy(false);
-    if (!made) {
+    const convId = made && 'conversation_id' in made ? made.conversation_id : made && 'id' in made ? made.id : undefined;
+    if (!convId) {
       setError(errorMessage(e, 'Could not start an agent.'));
       return;
     }
     setCreated((n) => n + 1);
-    route(`/conversations/${made.id}`);
+    route(`/conversations/${convId}`);
   };
 
   const subs = useSubAgents(board.data);
@@ -504,7 +518,7 @@ function Roster({
     <nav class={split.list} aria-label="Agents">
       <ListHead>
         <input class="input" type="search" aria-label="Filter agents" placeholder="Filter agents" value={filter} onInput={(e) => setFilter(e.currentTarget.value)} />
-        <button type="button" class="button buttonCompact" onClick={() => setPicking(true)} disabled={busy}>
+        <button type="button" class="button buttonCompact" onClick={() => { setAgentPick(null); setPicking(true); }} disabled={busy}>
           Run agent
         </button>
       </ListHead>
@@ -653,16 +667,47 @@ function Roster({
       >
         <div class={styles.dialogBox}>
           <h2 id="new-agent-title">Run agent</h2>
-          <p class="muted">Pick the role the agent runs as.</p>
+          {(storedAgents ?? []).filter((a) => a.status === 'active').length > 0 && (
+            <>
+              <p class="muted">Your agents, authored in the Builder.</p>
+              <div class={styles.roles} role="radiogroup" aria-label="Your agents">
+                {(storedAgents ?? [])
+                  .filter((a) => a.status === 'active')
+                  .map((a) => (
+                    <button
+                      key={a.id}
+                      type="button"
+                      role="radio"
+                      aria-checked={agentPick === a.id}
+                      class={styles.roleOpt}
+                      onClick={() => {
+                        setAgentPick(a.id);
+                        setRole('');
+                      }}
+                    >
+                      <strong>{a.definition.name}</strong>
+                      <span>
+                        {a.definition.role || 'default role'}
+                        {a.definition.context ? ` · ${a.definition.context}` : ''}
+                      </span>
+                    </button>
+                  ))}
+              </div>
+            </>
+          )}
+          <p class="muted">Or pick a role for an ad-hoc agent.</p>
           <div class={styles.roles} role="radiogroup" aria-label="Role">
             {(roles ?? [{ name: 'orchestrator' }]).map((r) => (
               <button
                 key={r.name}
                 type="button"
                 role="radio"
-                aria-checked={role === r.name}
+                aria-checked={agentPick === null && role === r.name}
                 class={styles.roleOpt}
-                onClick={() => setRole(r.name)}
+                onClick={() => {
+                  setRole(r.name);
+                  setAgentPick(null);
+                }}
               >
                 <strong>{r.name}</strong>
                 {r.description && <span>{r.description}</span>}

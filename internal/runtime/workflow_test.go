@@ -390,10 +390,10 @@ func (m *mockStore) AgentList() ([]memory.Agent, error) { return nil, nil }
 func (m *mockStore) AgentGet(string) (memory.Agent, bool, error) {
 	return memory.Agent{}, false, nil
 }
-func (m *mockStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
+func (m *mockStore) AgentCreate(_, _, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
-func (m *mockStore) AgentCreateWithStatus(_, _, _, _, _, _ string) (memory.Agent, error) {
+func (m *mockStore) AgentCreateWithStatus(_, _, _, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
 func (m *mockStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {

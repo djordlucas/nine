@@ -15,6 +15,7 @@ import (
 	ninectx "nine/internal/context"
 	"nine/internal/embed"
 	"nine/internal/llm"
+	"nine/internal/protocol"
 )
 
 const analysisMaxTokens = 512
@@ -75,6 +76,12 @@ type Config struct {
 	// PlanMode is the initial reasoning mode (off | plan-only | always). Empty
 	// defaults to plan-only. Live-switchable per session via SetPlanMode.
 	PlanMode string
+
+	// ContextMode is the context-management mode (adr/context-compaction.md):
+	// protocol.ContextModeTrim ("", the default) lets the builder drop the
+	// oldest messages under budget; protocol.ContextModeCompact folds the
+	// older conversation into a summary in the system prompt near the window.
+	ContextMode string
 
 	// PlanReviewFn, when non-nil, is a function that's invoked between the analysis pass and
 	// the execution loop with the raw plan text. The bool Proceed flag decides to run the plan as-is;
@@ -155,8 +162,10 @@ type Loop struct {
 
 	history            []llm.Message
 	scratchpad         []ninectx.ScratchpadEntry
-	lastToolCount      int  // tool calls dispatched in the most recent Run()
-	forceThinkNextTurn bool // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
+	summary            string // compaction summary of the folded older history; "" until the first compaction
+	compactions        int    // how many times this loop has compacted
+	lastToolCount      int    // tool calls dispatched in the most recent Run()
+	forceThinkNextTurn bool   // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
 
 	// nextTurn, when set, restricts the next Run (RestrictNextTurn); turnAllow
 	// and turnGuard are the restriction of the Run in progress.
@@ -369,8 +378,10 @@ func (l *Loop) LastRunToolCount() int { return l.lastToolCount }
 // ConversationState is a serialisable snapshot of loop state for persistence and
 // resumption across process restarts.
 type ConversationState struct {
-	History    []llm.Message             `json:"history"`
-	Scratchpad []ninectx.ScratchpadEntry `json:"scratchpad"`
+	History     []llm.Message             `json:"history"`
+	Scratchpad  []ninectx.ScratchpadEntry `json:"scratchpad"`
+	Summary     string                    `json:"summary,omitempty"`     // folded older history (adr/context-compaction.md)
+	Compactions int                       `json:"compactions,omitempty"` // fold count
 }
 
 // NewLoop returns an agent loop ready to accept user turns.
@@ -651,20 +662,31 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 
 		l.stage(StageContext)
 
-		req, tokensUsed, exposure := l.builder.BuildForCall(ninectx.BuildInput{
-			SystemCore:          l.ambientCore(),
-			SystemExtras:        l.cfg.SystemExtras,
-			SystemSelf:          selfModel,
-			SystemEnrichment:    enrichment,
-			Tools:               l.turnTools(),
-			QueryVector:         queryVec,
-			ResultVector:        resultVec,
-			History:             l.history,
-			Scratchpad:          l.scratchpad,
-			SystemPlan:          plan,
-			QueuedMessagesCount: l.queuedMessagesCount(),
-			Promoted:            l.promotedNames(),
-		})
+		// In compact mode, fold the older history into the summary before
+		// building when the request nears the window (adr/context-compaction.md).
+		if l.compactMode() {
+			l.maybeCompact(ctx)
+		}
+
+		buildReq := func() (llm.Request, int, ninectx.Exposure) {
+			req, tokensUsed, exposure := l.builder.BuildForCall(ninectx.BuildInput{
+				SystemCore:          l.ambientCore(),
+				SystemExtras:        l.cfg.SystemExtras,
+				SystemSelf:          selfModel,
+				SystemEnrichment:    enrichment,
+				SystemSummary:       ninectx.SummarySection(l.summary),
+				Tools:               l.turnTools(),
+				QueryVector:         queryVec,
+				ResultVector:        resultVec,
+				History:             l.contextHistory(),
+				Scratchpad:          l.scratchpad,
+				SystemPlan:          plan,
+				QueuedMessagesCount: l.queuedMessagesCount(),
+				Promoted:            l.promotedNames(),
+			})
+			return req, tokensUsed, exposure
+		}
+		req, tokensUsed, exposure := buildReq()
 		l.lastExposure = exposure
 		req.MaxTokens = l.maxTokens()
 		req.OnChunk = l.onChunk
@@ -688,12 +710,33 @@ func (l *Loop) Run(ctx context.Context, userText string) (string, error) {
 			"tokens_used", tokensUsed,
 			"budget", l.builder.Budget(),
 			"history_len", len(l.history),
+			"compactions", l.compactions,
 			"scratchpad_entries", len(l.scratchpad),
 		)
 
 		l.stage(StageModel)
 		slog.Debug("llm_call", "priority", l.cfg.Priority, "history_len", len(l.history))
 		resp, err := l.queue.Submit(ctx, l.cfg.Priority, req)
+		// A request the estimate let through can still overflow at the
+		// provider: compact and resend once (adr/context-compaction.md).
+		if err != nil && l.compactMode() && ninectx.IsOverflow(err) {
+			slog.Warn("context overflowed", "tokens_estimated", tokensUsed, "window", l.builder.Budget())
+			if l.compact(ctx) {
+				req, tokensUsed, exposure = buildReq()
+				l.lastExposure = exposure
+				req.MaxTokens = l.maxTokens()
+				req.OnChunk = l.onChunk
+				req.OnThinkingChunk = l.onThinkingChunk
+				if think != nil {
+					req.Think = think
+				}
+				l.wireQueueStages(&req, StageModel)
+				if l.onLLMRequest != nil {
+					l.onLLMRequest(&req, tokensUsed, l.builder.Budget(), llmCallN)
+				}
+				resp, err = l.queue.Submit(ctx, l.cfg.Priority, req)
+			}
+		}
 		if err != nil {
 			return "", fmt.Errorf("llm: %w", err)
 		}
@@ -1117,6 +1160,79 @@ const RestrictedInputStub = "[This turn's input came from an automated source �
 	"event's content — and was removed from the history when the turn ended, so it cannot steer later turns. " +
 	"What the turn made of it is in the reply that follows and in what it recorded.]"
 
+// compactMode reports whether this loop folds its older history into a
+// summary instead of letting the builder trim it (adr/context-compaction.md).
+func (l *Loop) compactMode() bool {
+	return l.cfg.ContextMode == protocol.ContextModeCompact
+}
+
+// contextHistory is the history sent this call: with a summary in place and
+// the kept part not starting at a user message, a lead line says where the
+// rest went (seven does the same in request()).
+func (l *Loop) contextHistory() []llm.Message {
+	if l.summary == "" || len(l.history) == 0 || l.history[0].Role == "user" {
+		return l.history
+	}
+	out := make([]llm.Message, 0, len(l.history))
+	out = append(out, llm.Message{Role: "user", Text: ninectx.SummaryLead})
+	return append(out, l.history...)
+}
+
+// maybeCompact compacts once when the request nears the context window.
+func (l *Loop) maybeCompact(ctx context.Context) {
+	window := l.builder.Budget()
+	est := ninectx.EstimateTokensFromChars(ninectx.RequestChars(
+		l.ambientCore()+l.cfg.SystemExtras+ninectx.SummarySection(l.summary), l.history, l.turnToolDefs(),
+	))
+	if est <= int(float64(window)*ninectx.CompactAt) {
+		return
+	}
+	l.compact(ctx)
+}
+
+// compact folds the oldest part of the history into the summary, replacing
+// it in the live history. Folded messages stay in the saved checkpoint only
+// in earlier versions — from here on they are simply not sent. A failed
+// summarization is logged and the turn proceeds uncompacted: compaction is
+// an optimisation, never an outage.
+func (l *Loop) compact(ctx context.Context) bool {
+	window := l.builder.Budget()
+	keepChars := ninectx.EstimateTokensToChars(int(float64(window) * ninectx.KeepShare))
+	cut := ninectx.CutIndex(l.history, keepChars)
+	if cut <= 0 {
+		slog.Warn("context not compacted", "detail", "nothing to fold", "messages", len(l.history))
+		return false
+	}
+	started := time.Now()
+	before := ninectx.EstimateTokensFromChars(ninectx.RequestChars("", l.history, nil))
+	summary, err := ninectx.Summarize(ctx, l.queue.Submit, llm.PriorityBackground, l.summary, l.history[:cut], window)
+	if err != nil {
+		if ctx.Err() != nil {
+			return false
+		}
+		slog.Error("context compaction failed", "error", err)
+		return false
+	}
+	l.summary = summary
+	l.history = append([]llm.Message(nil), l.history[cut:]...)
+	l.compactions++
+	after := ninectx.EstimateTokensFromChars(ninectx.RequestChars(ninectx.SummarySection(l.summary), l.history, nil))
+	slog.Info("context compacted",
+		"folded", cut, "kept", len(l.history), "tokens_before", before, "tokens_after", after,
+		"summary_chars", len(summary), "compactions", l.compactions, "duration_ms", time.Since(started).Milliseconds())
+	return true
+}
+
+// turnToolDefs is the advertised tool set as plain defs, for size estimates.
+func (l *Loop) turnToolDefs() []llm.ToolDef {
+	tools := l.turnTools()
+	out := make([]llm.ToolDef, 0, len(tools))
+	for _, t := range tools {
+		out = append(out, t.Tool)
+	}
+	return out
+}
+
 // ClearHistory discards conversation history and scratchpad, making the loop
 // stateless for the next turn. A goal session's clock turns start this way.
 func (l *Loop) ClearHistory() {
@@ -1134,8 +1250,10 @@ func (l *Loop) AppendUserHistory(text string) {
 // SaveState serialises the loop's current state to JSON.
 func (l *Loop) SaveState() ([]byte, error) {
 	return json.Marshal(ConversationState{
-		History:    l.history,
-		Scratchpad: l.scratchpad,
+		History:     l.history,
+		Scratchpad:  l.scratchpad,
+		Summary:     l.summary,
+		Compactions: l.compactions,
 	})
 }
 
@@ -1147,6 +1265,8 @@ func (l *Loop) LoadState(data []byte) error {
 	}
 	l.history = cp.History
 	l.scratchpad = cp.Scratchpad
+	l.summary = cp.Summary
+	l.compactions = cp.Compactions
 	return nil
 }
 

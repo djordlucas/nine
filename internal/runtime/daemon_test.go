@@ -726,10 +726,10 @@ func (m *mockGoalStore) AgentList() ([]memory.Agent, error) { return nil, nil }
 func (m *mockGoalStore) AgentGet(string) (memory.Agent, bool, error) {
 	return memory.Agent{}, false, nil
 }
-func (m *mockGoalStore) AgentCreate(_, _, _, _, _ string) (memory.Agent, error) {
+func (m *mockGoalStore) AgentCreate(_, _, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
-func (m *mockGoalStore) AgentCreateWithStatus(_, _, _, _, _, _ string) (memory.Agent, error) {
+func (m *mockGoalStore) AgentCreateWithStatus(_, _, _, _, _, _, _ string) (memory.Agent, error) {
 	return memory.Agent{}, nil
 }
 func (m *mockGoalStore) AgentUpdate(_ string, _ memory.AgentPatch) (memory.Agent, bool, error) {

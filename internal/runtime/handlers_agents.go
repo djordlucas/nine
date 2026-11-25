@@ -19,7 +19,7 @@ import (
 // toWireAgent converts a store row to its wire form; the JSON-text columns
 // become the definition's raw fields.
 func toWireAgent(a memory.Agent) protocol.Agent {
-	def := protocol.AgentDefinition{Name: a.Name, Role: a.Role}
+	def := protocol.AgentDefinition{Name: a.Name, Role: a.Role, Context: a.Context}
 	if a.Skills != "" {
 		_ = json.Unmarshal([]byte(a.Skills), &def.Skills)
 	}
@@ -87,7 +87,11 @@ func (d *Daemon) handleAgentCreate(enc *json.Encoder, payload json.RawMessage) {
 	skills, _ := json.Marshal(def.Skills)
 	selfModel, _ := json.Marshal(def.SelfModel)
 	reflection, _ := json.Marshal(def.Reflection)
-	a, err := d.store.AgentCreate(def.Name, def.Role, string(skills), string(selfModel), string(reflection))
+	if def.Context != "" && def.Context != protocol.ContextModeTrim && def.Context != protocol.ContextModeCompact {
+		enc.Encode(protocol.NewErrorMsg(fmt.Sprintf("agent_create: unknown context mode %q", def.Context))) //nolint:errcheck
+		return
+	}
+	a, err := d.store.AgentCreate(def.Name, def.Role, string(skills), string(selfModel), string(reflection), def.Context)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
@@ -127,6 +131,11 @@ func (d *Daemon) handleAgentUpdate(enc *json.Encoder, id string, payload json.Ra
 				p.SelfModel = &s
 			case "reflection":
 				p.Reflection = &s
+			}
+		case "context":
+			var s string
+			if json.Unmarshal(v, &s) == nil {
+				p.Context = &s
 			}
 		}
 	}
@@ -264,7 +273,7 @@ func (d *Daemon) handleAgentImport(enc *json.Encoder, payload json.RawMessage) {
 		skills = "[]"
 	}
 	a, err := d.store.AgentCreateWithStatus(manifest.Name, manifest.Role, skills,
-		string(manifest.SelfModel), string(manifest.Reflection), memory.AgentStaged)
+		string(manifest.SelfModel), string(manifest.Reflection), "", memory.AgentStaged)
 	if err != nil {
 		enc.Encode(protocol.NewErrorMsg(err.Error())) //nolint:errcheck
 		return
