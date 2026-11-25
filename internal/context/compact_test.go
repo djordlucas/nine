@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -52,11 +53,11 @@ func TestCutIndexPrefersUserAndNeverToolResult(t *testing.T) {
 
 func TestIsOverflow(t *testing.T) {
 	cases := map[string]bool{
-		`llm: 400 Bad Request: context length exceeded`:        true,
-		"422: prompt is too long for the model":                 true,
-		"request 413: total tokens exceed the context window":   true,
-		"500 internal error":                                    false,
-		"llm: connection refused":                               false,
+		`llm: 400 Bad Request: context length exceeded`:       true,
+		"422: prompt is too long for the model":               true,
+		"request 413: total tokens exceed the context window": true,
+		"500 internal error":                                  false,
+		"llm: connection refused":                             false,
 	}
 	for text, want := range cases {
 		if got := IsOverflow(errors.New(text)); got != want {
@@ -96,7 +97,7 @@ func TestSummarizeMergesChunks(t *testing.T) {
 			t.Fatalf("summarizer system prompt mismatch")
 		}
 		n := len(prompts)
-		return llm.Response{Text: strings.Repeat("s", 10) + string(rune('0'+n))}, nil
+		return llm.Response{Text: strings.Repeat("s", 10) + strconv.Itoa(n)}, nil
 	}
 	out, err := Summarize(context.Background(), submit, llm.PriorityBackground, "", messages, window)
 	if err != nil {

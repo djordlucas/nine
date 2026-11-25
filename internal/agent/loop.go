@@ -164,8 +164,8 @@ type Loop struct {
 	scratchpad         []ninectx.ScratchpadEntry
 	summary            string // compaction summary of the folded older history; "" until the first compaction
 	compactions        int    // how many times this loop has compacted
-	lastToolCount      int  // tool calls dispatched in the most recent Run()
-	forceThinkNextTurn bool // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
+	lastToolCount      int    // tool calls dispatched in the most recent Run()
+	forceThinkNextTurn bool   // set by SetForceThinkNextTurn; consumed + reset each Run (/think)
 
 	// nextTurn, when set, restricts the next Run (RestrictNextTurn); turnAllow
 	// and turnGuard are the restriction of the Run in progress.

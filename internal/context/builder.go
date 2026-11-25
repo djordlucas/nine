@@ -72,8 +72,8 @@ type BuildInput struct {
 	// trim mode or has never compacted. Priority 2.7: capped at a small
 	// share of the window, dropped only when the budget is extremely tight.
 	SystemSummary string
-	Tools            []ToolWithVector // priority 2: relevance-filtered
-	QueryVector      []float32        // embedding of the current query; nil → no ranking
+	Tools         []ToolWithVector // priority 2: relevance-filtered
+	QueryVector   []float32        // embedding of the current query; nil → no ranking
 	// ResultVector embeds the turn's latest tool results. Hybrid picks rank
 	// on the better of it and QueryVector, so a task the model learns from a
 	// tool result gets its tools within the turn. nil → QueryVector alone.
